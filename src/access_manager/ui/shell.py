@@ -11,7 +11,6 @@ def build_layout():
         html.Div([
             html.Header([
                 html.Div([
-                    html.Div("ADMINISTRATION DES HABILITATIONS", className="eyebrow"),
                     html.H1("Gestion des habilitations"),
                     html.P("Attribution des accès aux applications et aux projets.", className="subtitle"),
                 ]),
