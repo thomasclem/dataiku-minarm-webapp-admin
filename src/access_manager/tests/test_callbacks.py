@@ -26,6 +26,34 @@ class CallbackTest(unittest.TestCase):
         payload={'output':key,'outputs':outputs,'inputs':inputs,'state':state or [],'changedPropIds':[inputs[0]['id']+'.'+inputs[0]['property']]}
         return self.client.post('/_dash-update-component',json=payload,headers={'Test-Actor':actor} if actor else {})
 
+    def test_progression_unlocks_only_completed_predecessors(self):
+        for project, user, group, reviewed, expected in [
+            (None, None, None, False, (True, True, True, True)),
+            ('P', None, None, False, (False, True, True, True)),
+            ('P', 'target', None, False, (False, False, True, True)),
+            ('P', 'target', 'viewer', False, (False, False, False, True)),
+            ('P', 'target', 'viewer', True, (False, False, False, False)),
+            (None, 'target', 'viewer', True, (True, True, True, True)),
+        ]:
+            with self.subTest(project=project, user=user, group=group, reviewed=reviewed):
+                inputs=[{'id':i, 'property':p, 'value':v} for i,p,v in [
+                    ('project-dropdown','value',project), ('target-user-dropdown','value',user),
+                    ('group-dropdown','value',group), ('preview-allowed','data',reviewed)]]
+                response=self.post('update_progression', inputs)
+                self.assertEqual(response.status_code,200)
+                result=response.get_json()['response']
+                actual=tuple(result[i]['disabled'] for i in ['target-user-dropdown','group-dropdown','preview-button','ack-section'])
+                self.assertEqual(actual,expected)
+
+    def test_clearing_predecessor_clears_groups_without_repository_access(self):
+        response=self.post('load_groups_for_project',[
+            {'id':'project-dropdown','property':'value','value':None},
+            {'id':'target-user-dropdown','property':'value','value':'target'}])
+        self.assertEqual(response.status_code,200)
+        result=response.get_json()['response']['group-dropdown']
+        self.assertEqual(result,{'options':[], 'value':None})
+        self.assertEqual(self.repo.writes,0)
+
     def test_unauthenticated_load_returns_no_accounts(self):
         response=self.post('load_projects_and_users',[{'id':'load-button','property':'n_clicks','value':1}])
         self.assertEqual(response.status_code,200)

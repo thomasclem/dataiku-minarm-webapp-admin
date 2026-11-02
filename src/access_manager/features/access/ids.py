@@ -11,3 +11,7 @@ ADD_BUTTON = 'add-button'
 RESULT = 'result'
 PREVIEW_TOKEN = 'preview-token'
 PREVIEW_ALLOWED = 'preview-allowed'
+
+USER_SECTION = 'user-section'
+GROUP_SECTION = 'group-section'
+ACK_SECTION = 'ack-section'

@@ -14,7 +14,7 @@ class WiringTest(unittest.TestCase):
     def test_initial_layout_and_dependencies_served(self):
         self.assertEqual(self.client.get('/_dash-layout').status_code,200)
         self.assertEqual(self.client.get('/_dash-dependencies').status_code,200)
-        self.assertEqual(len(self.app.callback_map),6)
+        self.assertEqual(len(self.app.callback_map),8)
     def test_each_callback_component_exists_exactly_once(self):
         counts=Counter()
         def visit(node):

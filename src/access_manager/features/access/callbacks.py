@@ -1,6 +1,5 @@
 """Dash request adapters; domain decisions are delegated to AccessService."""
 from dash import html, Input, Output, State, no_update
-from dash.exceptions import PreventUpdate
 from flask import request
 from . import ids
 from ...config import SAFE_ERROR_TYPES
@@ -10,6 +9,43 @@ from ...ui.components import render_alert, render_empty_summary, render_preview
 from ...ui.messages import app_error, ok_message
 
 def register_callbacks(app, service):
+    @app.callback(
+        [Output(ids.TARGET_USER_DROPDOWN, "disabled"),
+         Output(ids.USER_SECTION, "className"),
+         Output(ids.TARGET_USER_DROPDOWN, "placeholder"),
+         Output(ids.GROUP_DROPDOWN, "disabled"),
+         Output(ids.GROUP_SECTION, "className"),
+         Output(ids.GROUP_DROPDOWN, "placeholder"),
+         Output(ids.PREVIEW_BUTTON, "disabled"),
+         Output(ids.ACK_SECTION, "disabled"),
+         Output(ids.ACK_SECTION, "className")],
+        [Input(ids.PROJECT_DROPDOWN, "value"),
+         Input(ids.TARGET_USER_DROPDOWN, "value"),
+         Input(ids.GROUP_DROPDOWN, "value"),
+         Input(ids.PREVIEW_ALLOWED, "data")],
+    )
+    def update_progression(project_key, target_user, group_name, preview_allowed):
+        has_project = bool(project_key)
+        has_user = has_project and bool(target_user)
+        complete = has_user and bool(group_name)
+        reviewed = complete and bool(preview_allowed)
+        return (
+            not has_project, "step" if has_project else "step is-disabled",
+            "Sélectionnez un utilisateur" if has_project else "Sélectionnez d’abord un projet",
+            not has_user, "step" if has_user else "step is-disabled",
+            "Sélectionnez un groupe" if has_user else "Sélectionnez d’abord un utilisateur",
+            not complete, not reviewed,
+            "ack-area" if reviewed else "ack-area is-disabled",
+        )
+
+    @app.callback(
+        Output(ids.TARGET_USER_DROPDOWN, "value"),
+        Input(ids.PROJECT_DROPDOWN, "value"),
+        prevent_initial_call=True,
+    )
+    def reset_user_on_project_change(project_key):
+        return None
+
     @app.callback(
         [Output(ids.OPERATOR, "children"), Output(ids.PROJECT_DROPDOWN, "options"), Output(ids.TARGET_USER_DROPDOWN, "options"), Output(ids.RESULT, "children", allow_duplicate=True)],
         Input(ids.LOAD_BUTTON, "n_clicks"),
@@ -47,12 +83,12 @@ def register_callbacks(app, service):
 
     @app.callback(
         [Output(ids.GROUP_DROPDOWN, "options"), Output(ids.GROUP_DROPDOWN, "value"), Output(ids.RESULT, "children", allow_duplicate=True)],
-        Input(ids.PROJECT_DROPDOWN, "value"),
+        [Input(ids.PROJECT_DROPDOWN, "value"), Input(ids.TARGET_USER_DROPDOWN, "value")],
         prevent_initial_call=True,
     )
-    def load_groups_for_project(project_key):
-        if not project_key:
-            raise PreventUpdate
+    def load_groups_for_project(project_key, target_user):
+        if not project_key or not target_user:
+            return [], None, render_empty_summary()
         try:
             actor = service.authenticate(dict(request.headers))
             ranked = service.ranked_groups(actor, project_key)

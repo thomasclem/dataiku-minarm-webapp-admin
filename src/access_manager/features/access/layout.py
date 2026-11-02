@@ -15,20 +15,20 @@ def build_access_form():
         ], className="step"),
         html.Div([
             html.Label([html.Span("02", className="step-number"), html.Span("Utilisateur bénéficiaire")], className="step-label", htmlFor=ids.TARGET_USER_DROPDOWN),
-            dcc.Dropdown(id=ids.TARGET_USER_DROPDOWN, placeholder="Actualisez les données pour charger les utilisateurs actifs", className="access-dropdown", labels=DROPDOWN_LABELS),
+            dcc.Dropdown(id=ids.TARGET_USER_DROPDOWN, placeholder="Sélectionnez d’abord un projet", disabled=True, className="access-dropdown", labels=DROPDOWN_LABELS),
             html.P("Le compte doit exister et être actif au moment de la vérification puis de l’attribution.", className="step-help"),
-        ], className="step"),
+        ], id=ids.USER_SECTION, className="step is-disabled"),
         html.Div([
             html.Label([html.Span("03", className="step-number"), html.Span("Groupe concerné")], className="step-label", htmlFor=ids.GROUP_DROPDOWN),
-            dcc.Dropdown(id=ids.GROUP_DROPDOWN, placeholder="Sélectionnez un groupe", className="access-dropdown", labels=DROPDOWN_LABELS, search_order="original"),
+            dcc.Dropdown(id=ids.GROUP_DROPDOWN, placeholder="Sélectionnez d’abord un utilisateur", disabled=True, className="access-dropdown", labels=DROPDOWN_LABELS, search_order="original"),
             html.P("Les groupes sont classés du moins privilégié au plus privilégié. Le détail des droits est présenté après vérification.", className="step-help"),
-        ], className="step"),
+        ], id=ids.GROUP_SECTION, className="step is-disabled"),
         html.Div([
-            html.Button("Vérifier les droits", id=ids.PREVIEW_BUTTON, n_clicks=0, className="primary-button"),
+            html.Button("Vérifier les droits", id=ids.PREVIEW_BUTTON, n_clicks=0, disabled=True, className="primary-button"),
         ], className="form-actions"),
-        html.Div([
+        html.Fieldset([
             dcc.Checklist(id=ids.ACK_SCOPE, options=[{"label": "Je confirme avoir pris connaissance des droits associés au groupe et de leur portée sur l’ensemble de l’instance.", "value": "ack"}], value=[]),
-        ], className="ack-area"),
+        ], id=ids.ACK_SECTION, disabled=True, className="ack-area is-disabled"),
         html.Div([
             html.Button("Confirmer l’attribution", id=ids.ADD_BUTTON, n_clicks=0, disabled=True, className="primary-button"),
         ], className="form-actions"),

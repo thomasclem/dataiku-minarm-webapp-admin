@@ -59,6 +59,12 @@ h1 { font-size: clamp(1.9rem, 3.4vw, 2.1rem); line-height: 1.2; letter-spacing: 
 .card-copy { margin: 0 0 1rem; color: var(--muted); }
 .step { border-top: 1px solid var(--border); padding: 1rem 0; }
 .step:first-of-type { border-top: 0; }
+.is-disabled { background: #F1F3F5; color: #6B7280; border-radius: 4px; }
+.step.is-disabled { padding-left: .75rem; padding-right: .75rem; }
+.is-disabled .step-label, .is-disabled .step-number, .is-disabled .step-help { color: #6B7280; }
+.is-disabled .access-dropdown { opacity: .65; }
+fieldset.ack-area { min-width: 0; margin-left: 0; margin-right: 0; }
+.ack-area.is-disabled { background: #F1F3F5; color: #6B7280; }
 .step-label { display: flex; align-items: baseline; gap: .65rem; margin-bottom: .45rem; font-weight: 650; }
 .step-number { color: var(--primary); font-size: .78rem; letter-spacing: .08em; font-weight: 700; }
 .step-help { margin: .35rem 0 0; color: var(--muted); font-size: .92rem; }
