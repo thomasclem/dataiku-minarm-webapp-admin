@@ -1,0 +1,13 @@
+"""Stable callback IDs, shared by layouts and callbacks."""
+URL = 'url'
+OPERATOR = 'operator'
+LOAD_BUTTON = 'load-button'
+PROJECT_DROPDOWN = 'project-dropdown'
+TARGET_USER_DROPDOWN = 'target-user-dropdown'
+GROUP_DROPDOWN = 'group-dropdown'
+PREVIEW_BUTTON = 'preview-button'
+ACK_SCOPE = 'ack-scope'
+ADD_BUTTON = 'add-button'
+RESULT = 'result'
+PREVIEW_TOKEN = 'preview-token'
+PREVIEW_ALLOWED = 'preview-allowed'

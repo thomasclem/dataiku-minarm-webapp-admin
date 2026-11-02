@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataiku-webapp-access-manager"
+version = "0.1.0"
+description = "Dash application for delegated Dataiku group membership administration"
+requires-python = ">=3.10"
+dependencies = ["dash==4.4.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["access_manager*"]
+exclude = ["access_manager.tests*"]
