@@ -1,6 +1,6 @@
-# Gestion des habilitations — Dataiku Dash
+# Gestion des habilitations - Dataiku Dash
 
-Application française de délégation d’appartenance aux groupes existants.
+Application française de création de comptes Reader et de partage multi-projets via les groupes existants.
 Le point d’entrée DSS importe et appelle uniquement l’initialiseur ; aucun
 appel au SDK ou callback n’est défini dans le code de la webapp DSS.
 
@@ -79,3 +79,24 @@ les aperçus périmés, les callbacks HTTP et le rendu initial sous Dash 4.4.1.
 Les restrictions de Dataiku Cloud sur la sauvegarde des paramètres utilisateur
 restent applicables. Le verrou d’écriture est limité au processus ; les
 modifications externes concurrentes doivent être coordonnées séparément.
+
+
+## Parcours Reader et multi-projets
+
+1. Actualiser les données, puis créer un utilisateur Reader ou sélectionner un Reader actif existant.
+2. Sélectionner un à cinquante projets administrés par l’opérateur connecté.
+3. Consulter la proposition automatique par projet, vérifier les droits, confirmer leur portée puis attribuer les accès.
+
+La création est une action explicite distincte de l’attribution : elle crée un compte sans aucun groupe initial. Le profil `READER` est imposé côté serveur, jamais choisi par le navigateur. La capacité est relue avant création ; une licence absente, expirée ou sans place Reader bloque l’action. Aucun repli vers un profil plus privilégié n’est effectué. Les comptes existants doivent également avoir exactement le profil READER ; leur profil n’est jamais modifié.
+
+La cible est une **instance DSS standard avec licence READER**. Le réglage administratif `READER_SOURCE_TYPE = 'LOCAL'` utilise un mot de passe initial saisi dans le formulaire et transmis uniquement lors de la création ; il est effacé du champ après la tentative et n’entre ni dans les stores ni dans les journaux applicatifs. Pour une authentification externe, un administrateur peut configurer `LDAP` ou `LOCAL_NO_AUTH`, après vérification de l’authentification sur l’instance cible. Aucun appel de création réel n’a été fait pendant le développement.
+
+**Dataiku Cloud :** la création et la modification des utilisateurs DSS ne sont pas prises en charge par ces API. Utiliser Launchpad pour cette cible ; cette intégration n’est pas incluse dans le parcours DSS demandé. L’instance Cloud de prévisualisation actuelle ne dispose pas du profil READER ; le bouton de création y reste désactivé.
+
+Les groupes proposés doivent déjà exister, être locaux, non administrateurs, ne porter aucune capacité globale et n’accorder que `readDashboards` ou `readProjectContent` dans les listes d’accès de tous les projets concernés. Tout droit inconnu ou d’écriture exclut le groupe. L’opérateur doit administrer chaque projet sélectionné ainsi que tous les projets également concernés. La politique `DELEGABLE_GROUPS_BY_PROJECT` existante reste obligatoire pour les opérateurs non administrateurs d’instance ; elle est vide par défaut et doit être renseignée par un administrateur après approbation des groupes.
+
+Le classement est **par projet**, déterministe : consultation des tableaux de bord avant lecture du contenu du projet, puis moins de projets hors sélection, moins de droits, appartenance existante en cas d’égalité, puis nom. Il ne prétend pas calculer un optimum combinatoire de toutes les combinaisons de groupes. Les groupes retenus sont dédupliqués et ajoutés en une seule sauvegarde fraîche des paramètres utilisateur. Si un projet n’a aucun groupe admissible, toute l’attribution est bloquée. Aucune modification de groupe ou de liste d’accès de projet n’est effectuée.
+
+L’aperçu signé expire et lie l’opérateur, le bénéficiaire, les projets, les groupes, leurs droits, la politique et les appartenances. Ces données sont recalculées avant sauvegarde. Une autre modification impose une nouvelle vérification. Les autorisations de ressources hors listes d’accès de projets (connexions, dossiers, etc.) ne font pas l’objet d’un inventaire exhaustif ; la portée doit être examinée avant délégation. Le verrou applicatif ne coordonne pas les autres processus DSS ni les modifications administratives externes.
+
+`services/onboarding.py` porte ce parcours ; les opérations SDK restent uniquement dans `repositories/dss.py`. Le point d’entrée DSS reste inchangé. Le dépôt de démonstration local permet de créer des comptes et de partager deux projets uniquement en mémoire.

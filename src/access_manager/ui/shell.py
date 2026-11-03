@@ -8,11 +8,12 @@ def build_layout():
         dcc.Location(id=ids.URL, refresh=False),
         dcc.Store(id=ids.PREVIEW_TOKEN),
         dcc.Store(id=ids.PREVIEW_ALLOWED, data=False),
+        dcc.Store(id=ids.CREATION_AVAILABLE, data=False),
         html.Div([
             html.Header([
                 html.Div([
                     html.H1("Gestion des habilitations"),
-                    html.P("Attribution des accès aux applications et aux projets.", className="subtitle"),
+                    html.P("Création de comptes Reader et attribution des accès aux projets.", className="subtitle"),
                 ]),
                 html.Div([
                     html.Div(id=ids.OPERATOR, className="operator-pill"),

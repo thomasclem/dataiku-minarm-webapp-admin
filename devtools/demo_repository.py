@@ -9,7 +9,7 @@ class DemoRepository:
                 "login": "agent.demo", "enabled": True, "groups": ["administrators"]
             },
             "beneficiaire.demo": {
-                "login": "beneficiaire.demo", "enabled": True, "groups": []
+                "login": "beneficiaire.demo", "enabled": True, "userProfile": "READER", "groups": []
             },
         }
         self.groups = {
@@ -34,6 +34,10 @@ class DemoRepository:
                     },
                 ],
             }
+        }
+
+        self.projects["PROJET_CONSULTATION"] = {
+            "owner": "agent.demo", "permissions": [{"group": "consultation_app", "readDashboards": True}]
         }
 
     def auth_info(self, headers):
@@ -62,4 +66,18 @@ class DemoRepository:
         if group in memberships:
             return False
         memberships.append(group)
+        return True
+
+    def reader_capacity(self):
+        return {'available':True, 'message':'Démonstration locale : création en mémoire, profil Reader uniquement.'}
+
+    def create_reader(self, login, display_name, email, password, source_type):
+        if login in self.users:
+            raise ValueError('Identifiant déjà présent.')
+        self.users[login]={'login':login,'displayName':display_name,'email':email,'sourceType':source_type,'userProfile':'READER','enabled':True,'groups':[]}
+
+    def add_groups(self, login, groups, required_profile='READER'):
+        if self.users[login].get('userProfile') != required_profile:
+            raise ValueError('Profil Reader requis.')
+        self.users[login]['groups']=sorted(set(self.users[login]['groups']) | set(groups))
         return True

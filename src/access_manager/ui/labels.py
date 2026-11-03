@@ -34,6 +34,9 @@ PERMISSION_LABELS = {
 
 DROPDOWN_LABELS = {
     "search": "Rechercher…",
+    "select_all": "Tout sélectionner",
+    "selected_count": "{num_selected} sélectionnés",
+    "deselect_all": "Tout désélectionner",
     "clear_search": "Effacer la recherche",
     "clear_selection": "Effacer la sélection",
     "no_options_found": "Aucun résultat",

@@ -1,50 +1,63 @@
-"""Access feature layouts, colocated with callbacks and component IDs."""
+"""Progressive Reader onboarding form; data loading belongs to callbacks."""
 from dash import dcc, html
 from . import ids
+from ...config import READER_SOURCE_TYPE
 from ...ui.components import render_empty_summary
 from ...ui.labels import DROPDOWN_LABELS
 
+
+def step_label(number, label, control=None):
+    return html.Label([html.Span(number, className='step-number'), html.Span(label)],
+                      className='step-label', htmlFor=control)
+
+
 def build_access_form():
     return html.Section([
-        html.H2("Paramètres de l’attribution", className="card-heading"),
-        html.P("Sélectionnez le projet, le bénéficiaire et le groupe, puis vérifiez les droits avant confirmation.", className="card-copy"),
+        html.H2('Paramètres de l’habilitation', className='card-heading'),
+        html.P('Créez ou sélectionnez un compte Reader, choisissez les projets, puis vérifiez les groupes proposés.', className='card-copy'),
         html.Div([
-            html.Label([html.Span("01", className="step-number"), html.Span("Projet")], className="step-label", htmlFor=ids.PROJECT_DROPDOWN),
-            dcc.Dropdown(id=ids.PROJECT_DROPDOWN, placeholder="Actualisez les données pour charger les projets administrables", className="access-dropdown", labels=DROPDOWN_LABELS),
-            html.P("Seuls les projets administrés par l’utilisateur connecté sont proposés, sauf administrateur d’instance.", className="step-help"),
-        ], className="step"),
+            step_label('01', 'Utilisateur bénéficiaire', ids.TARGET_USER_DROPDOWN),
+            dcc.Dropdown(id=ids.TARGET_USER_DROPDOWN, options=[], placeholder='Actualisez les données pour charger les comptes Reader', labels=DROPDOWN_LABELS),
+            html.Details([
+                html.Summary('Créer un utilisateur Reader'),
+                html.P('Le compte est créé sans groupe. Les accès sont attribués après vérification des projets.', className='step-help'),
+                html.Div(id=ids.CREATE_STATUS, role='status'),
+                html.Fieldset([
+                    html.Label('Identifiant', htmlFor=ids.NEW_LOGIN),
+                    dcc.Input(id=ids.NEW_LOGIN, type='text', maxLength=128, autoComplete='off'),
+                    html.Label('Nom complet', htmlFor=ids.NEW_NAME),
+                    dcc.Input(id=ids.NEW_NAME, type='text', maxLength=200),
+                    html.Label('Adresse électronique', htmlFor=ids.NEW_EMAIL),
+                    dcc.Input(id=ids.NEW_EMAIL, type='email', maxLength=254),
+                    html.Div([
+                        html.Label('Mot de passe initial', htmlFor=ids.NEW_PASSWORD),
+                        dcc.Input(id=ids.NEW_PASSWORD, type='password', autoComplete='new-password'),
+                    ], style={} if READER_SOURCE_TYPE == 'LOCAL' else {'display': 'none'}),
+                    html.P('Profil imposé : Reader, consultation uniquement.', className='step-help'),
+                    html.Button('Créer le compte Reader', id=ids.CREATE_BUTTON, n_clicks=0, disabled=True, className='secondary-button'),
+                ], id=ids.NEW_USER_FORM, disabled=True, className='reader-fields'),
+            ], className='create-user-panel'),
+        ], className='step'),
         html.Div([
-            html.Label([html.Span("02", className="step-number"), html.Span("Utilisateur bénéficiaire")], className="step-label", htmlFor=ids.TARGET_USER_DROPDOWN),
-            dcc.Dropdown(id=ids.TARGET_USER_DROPDOWN, placeholder="Sélectionnez d’abord un projet", disabled=True, className="access-dropdown", labels=DROPDOWN_LABELS),
-            html.P("Le compte doit exister et être actif au moment de la vérification puis de l’attribution.", className="step-help"),
-        ], id=ids.USER_SECTION, className="step is-disabled"),
+            step_label('02', 'Projets à partager', ids.PROJECT_DROPDOWN),
+            dcc.Dropdown(id=ids.PROJECT_DROPDOWN, options=[], value=[], multi=True, disabled=True,
+                         placeholder='Sélectionnez d’abord un utilisateur Reader', labels=DROPDOWN_LABELS),
+            html.P('Sélectionnez un ou plusieurs projets que vous administrez.', className='step-help'),
+        ], id=ids.PROJECT_SECTION, className='step is-disabled'),
         html.Div([
-            html.Label([html.Span("03", className="step-number"), html.Span("Groupe concerné")], className="step-label", htmlFor=ids.GROUP_DROPDOWN),
-            dcc.Dropdown(id=ids.GROUP_DROPDOWN, placeholder="Sélectionnez d’abord un utilisateur", disabled=True, className="access-dropdown", labels=DROPDOWN_LABELS, search_order="original"),
-            html.P("Les groupes sont classés du moins privilégié au plus privilégié. Le détail des droits est présenté après vérification.", className="step-help"),
-        ], id=ids.GROUP_SECTION, className="step is-disabled"),
-        html.Div([
-            html.Button("Vérifier les droits", id=ids.PREVIEW_BUTTON, n_clicks=0, disabled=True, className="primary-button"),
-        ], className="form-actions"),
+            step_label('03', 'Groupes de consultation proposés'),
+            html.Div('Sélectionnez d’abord les projets à partager.', id=ids.GROUP_PLAN, role='status'),
+            html.P('Le groupe le moins privilégié admissible est proposé pour chaque projet. Les groupes administrateurs, les droits d’écriture, les droits inconnus et les capacités globales sont exclus.', className='step-help'),
+            html.Button('Vérifier les droits', id=ids.PREVIEW_BUTTON, n_clicks=0, disabled=True, className='primary-button'),
+        ], id=ids.GROUP_SECTION, className='step is-disabled'),
         html.Fieldset([
-            dcc.Checklist(id=ids.ACK_SCOPE, options=[{"label": "Je confirme avoir pris connaissance des droits associés au groupe et de leur portée sur l’ensemble de l’instance.", "value": "ack"}], value=[]),
-        ], id=ids.ACK_SECTION, disabled=True, className="ack-area is-disabled"),
+            dcc.Checklist(id=ids.ACK_SCOPE, options=[{'label':'Je confirme avoir pris connaissance des groupes proposés et de leur portée sur les autres projets et ressources de l’instance.', 'value':'ack'}], value=[]),
+        ], id=ids.ACK_SECTION, disabled=True, className='ack-area is-disabled'),
         html.Div([
-            html.Button("Confirmer l’attribution", id=ids.ADD_BUTTON, n_clicks=0, disabled=True, className="primary-button"),
-        ], className="form-actions"),
-        html.Details([
-            html.Summary("Configuration administrateur"),
-            html.Ul([
-                html.Li("L’application doit s’exécuter avec un compte disposant des droits nécessaires à la gestion des groupes."),
-                html.Li("Les réglages forceAuthentication et backend API access doivent rester configurés dans les paramètres de l’application web."),
-                html.Li("La délégation hors administrateur d’instance reste désactivée tant que DELEGABLE_GROUPS_BY_PROJECT est vide."),
-                html.Li("Aucune écriture n’est effectuée sans aperçu valide, confirmation explicite et action sur le bouton d’attribution."),
-            ]),
-        ], className="admin-config")
-    ], className="card selection-card")
+            html.Button('Attribuer les accès', id=ids.ADD_BUTTON, n_clicks=0, disabled=True, className='primary-button'),
+        ], className='form-actions'),
+    ], className='card selection-card')
+
 
 def build_access_summary():
-    return html.Aside([
-        dcc.Loading(html.Div(id=ids.RESULT, children=render_empty_summary()), type="circle"),
-    ], className="card summary-card")
-
+    return html.Aside([dcc.Loading(html.Div(id=ids.RESULT, children=render_empty_summary()), type='circle')], className='card summary-card')

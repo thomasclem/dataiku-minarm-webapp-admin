@@ -7,7 +7,7 @@ class FakeRepository:
         self.users = {
             'root': {'login':'root','enabled':True,'groups':['administrators']},
             'operator': {'login':'operator','enabled':True,'groups':[]},
-            'target': {'login':'target','enabled':True,'groups':['existing'],'email':'preserved'},
+            'target': {'login':'target','enabled':True,'userProfile':'READER','groups':['existing'],'email':'preserved'},
         }
         self.groups = {
             'administrators': {'name':'administrators','admin':True,'sourceType':'LOCAL'},
@@ -15,6 +15,7 @@ class FakeRepository:
         }
         self.projects = {'P': {'owner':'operator','permissions':[{'group':'viewer','readProjectContent':True}]}}
         self.writes = 0
+        self.capacity = True
 
     def auth_info(self, headers): return {'authIdentifier': headers.get('Test-Actor', '')}
     def list_users(self): return copy.deepcopy(list(self.users.values()))
@@ -29,6 +30,18 @@ class FakeRepository:
         self.writes += 1
         return True
 
+    def reader_capacity(self):
+        return {'available':self.capacity, 'message':'Reader disponible' if self.capacity else 'READER indisponible'}
+    def create_reader(self, login, name, email, password, source_type):
+        if login in self.users: raise ValueError('Duplicate')
+        self.users[login]={'login':login,'enabled':True,'userProfile':'READER','groups':[],'displayName':name,'email':email,'sourceType':source_type}
+        self.writes+=1
+    def add_groups(self, login, groups, required_profile='READER'):
+        if self.users[login].get('userProfile') != required_profile: raise ValueError('Profile')
+        self.users[login]['groups']=sorted(set(self.users[login]['groups'])|set(groups))
+        self.writes+=1
+        return True
+
 class FakeSettings:
     def __init__(self, client, login):
         self.client, self.login = client, login
@@ -40,6 +53,6 @@ class FakeSettings:
 
 class FakeSDKClient:
     def __init__(self):
-        self.users = {'target': {'login':'target','enabled':True,'groups':['existing'],'email':'preserved','other':{'nested':True}}}
+        self.users = {'target': {'login':'target','enabled':True,'userProfile':'READER','groups':['existing'],'email':'preserved','other':{'nested':True}}}
         self.writes = 0
     def get_user(self, login): return SimpleNamespace(get_settings=lambda: FakeSettings(self, login))

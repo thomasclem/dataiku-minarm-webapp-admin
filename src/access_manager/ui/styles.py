@@ -95,6 +95,18 @@ fieldset.ack-area { min-width: 0; margin-left: 0; margin-right: 0; }
 .dash-dropdown-trigger { min-height: 44px; }
 .dash-dropdown-grid-container { min-width: 0; }
 .selection-card, .summary-card { min-width: 0; }
+fieldset.reader-fields { border: 0; padding: 0; margin: .75rem 0 0; min-width: 0; }
+.reader-fields label { display: block; font-weight: 600; margin: .6rem 0 .25rem; }
+.reader-fields input { width: 100%; min-height: 42px; border: 1px solid var(--border-strong); border-radius: 4px; padding: .5rem .65rem; }
+.reader-fields:disabled { color: #6B7280; }
+.reader-fields:disabled input { background: #F1F3F5; }
+.create-user-panel { margin-top: .8rem; padding: .75rem; border: 1px solid var(--border); border-radius: 4px; }
+.create-user-panel summary { cursor: pointer; font-weight: 600; }
+.reader-fields button, #preview-button { margin-top: .9rem; }
+.table-scroll { overflow-x: auto; margin: .75rem 0; }
+.access-plan-table { width: 100%; border-collapse: collapse; font-size: .88rem; text-align: left; }
+.access-plan-table th, .access-plan-table td { padding: .6rem .5rem; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.access-plan-table th { background: var(--accent); font-weight: 650; }
 .form-actions { border-top: 1px solid var(--border); margin-top: .65rem; padding-top: .9rem; display: flex; gap: .65rem; flex-wrap: wrap; align-items: center; }
 .ack-area { margin-top: .9rem; padding: .8rem .9rem; border-radius: 4px; background: #FFFFFF; border: 1px solid var(--border); color: var(--ink); }
 .ack-area label { display: flex; gap: .55rem; align-items: flex-start; }

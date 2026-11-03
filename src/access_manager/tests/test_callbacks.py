@@ -1,4 +1,4 @@
-"""Exercise actual Dash HTTP callbacks against an in-memory repository."""
+"""Exercise actual Dash HTTP adapters with an in-memory repository."""
 import unittest
 from dash import Dash
 from access_manager.features.access.callbacks import register_callbacks
@@ -10,7 +10,7 @@ from access_manager.tests.fakes import FakeRepository
 class CallbackTest(unittest.TestCase):
     def setUp(self):
         self.repo=FakeRepository()
-        self.service=AccessService(self.repo,signer=PreviewSigner(secret=b'callback-tests'))
+        self.service=AccessService(self.repo, policy={'P':['viewer']}, signer=PreviewSigner(secret=b'callback-tests'))
         self.app=Dash(__name__)
         self.app.layout=build_layout
         register_callbacks(self.app,self.service)
@@ -26,34 +26,6 @@ class CallbackTest(unittest.TestCase):
         payload={'output':key,'outputs':outputs,'inputs':inputs,'state':state or [],'changedPropIds':[inputs[0]['id']+'.'+inputs[0]['property']]}
         return self.client.post('/_dash-update-component',json=payload,headers={'Test-Actor':actor} if actor else {})
 
-    def test_progression_unlocks_only_completed_predecessors(self):
-        for project, user, group, reviewed, expected in [
-            (None, None, None, False, (True, True, True, True)),
-            ('P', None, None, False, (False, True, True, True)),
-            ('P', 'target', None, False, (False, False, True, True)),
-            ('P', 'target', 'viewer', False, (False, False, False, True)),
-            ('P', 'target', 'viewer', True, (False, False, False, False)),
-            (None, 'target', 'viewer', True, (True, True, True, True)),
-        ]:
-            with self.subTest(project=project, user=user, group=group, reviewed=reviewed):
-                inputs=[{'id':i, 'property':p, 'value':v} for i,p,v in [
-                    ('project-dropdown','value',project), ('target-user-dropdown','value',user),
-                    ('group-dropdown','value',group), ('preview-allowed','data',reviewed)]]
-                response=self.post('update_progression', inputs)
-                self.assertEqual(response.status_code,200)
-                result=response.get_json()['response']
-                actual=tuple(result[i]['disabled'] for i in ['target-user-dropdown','group-dropdown','preview-button','ack-section'])
-                self.assertEqual(actual,expected)
-
-    def test_clearing_predecessor_clears_groups_without_repository_access(self):
-        response=self.post('load_groups_for_project',[
-            {'id':'project-dropdown','property':'value','value':None},
-            {'id':'target-user-dropdown','property':'value','value':'target'}])
-        self.assertEqual(response.status_code,200)
-        result=response.get_json()['response']['group-dropdown']
-        self.assertEqual(result,{'options':[], 'value':None})
-        self.assertEqual(self.repo.writes,0)
-
     def test_unauthenticated_load_returns_no_accounts(self):
         response=self.post('load_projects_and_users',[{'id':'load-button','property':'n_clicks','value':1}])
         self.assertEqual(response.status_code,200)
@@ -62,18 +34,44 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(result['target-user-dropdown']['options'],[])
         self.assertEqual(self.repo.writes,0)
 
-    def test_authenticated_load_filters_administered_projects(self):
+    def test_authenticated_load_filters_administered_projects_and_reader_profiles(self):
         self.repo.projects['PRIVATE']={'owner':'someone','permissions':[]}
         response=self.post('load_projects_and_users',[{'id':'load-button','property':'n_clicks','value':1}],actor='operator')
         self.assertEqual(response.status_code,200)
-        self.assertEqual(response.get_json()['response']['project-dropdown']['options'],[{'label':'P','value':'P'}])
+        result=response.get_json()['response']
+        self.assertEqual(result['project-dropdown']['options'],[{'label':'P','value':'P'}])
+        self.assertEqual(result['target-user-dropdown']['options'],[{'label':'target','value':'target'}])
 
-    def test_changed_browser_selection_blocks_signed_submit(self):
-        actor=self.service.authenticate({'Test-Actor':'root'})
-        preview=self.service.compute_preview(actor,'P','target','viewer')
-        values=[('preview-token','data',preview['token']),('ack-scope','value',['ack']),('project-dropdown','value','P'),('target-user-dropdown','value','different'),('group-dropdown','value','viewer')]
-        response=self.post('submit_assignment',[{'id':'add-button','property':'n_clicks','value':1}],state=[{'id':i,'property':p,'value':v} for i,p,v in values],actor='root')
+    def test_progressive_sections_are_disabled_until_previous_filled(self):
+        for target, projects, allowed, ack, expected in [
+            (None,[],False,[],(True,True,True,True)),
+            ('target',[],False,[],(False,True,True,True)),
+            ('target',['P'],False,[],(False,False,True,True)),
+            ('target',['P'],True,[],(False,False,False,True)),
+            ('target',['P'],True,['ack'],(False,False,False,False)),
+            (None,['P'],True,['ack'],(True,True,True,True)),
+        ]:
+            values=[('target-user-dropdown','value',target),('project-dropdown','value',projects),('preview-allowed','data',allowed),('ack-scope','value',ack)]
+            response=self.post('update_progression',[{'id':i,'property':p,'value':v} for i,p,v in values])
+            self.assertEqual(response.status_code,200)
+            result=response.get_json()['response']
+            self.assertEqual(tuple(result[i]['disabled'] for i in ['project-dropdown','preview-button','ack-section','add-button']),expected)
+
+    def test_changed_selection_blocks_signed_submit(self):
+        from access_manager.services.onboarding import ReaderOnboarding
+        actor=self.service.authenticate({'Test-Actor':'operator'})
+        preview=ReaderOnboarding(self.service).preview(actor,['P'],'target')
+        state=[('preview-token','data',preview['token']),('ack-scope','value',['ack']),('target-user-dropdown','value','target'),('project-dropdown','value',['OTHER'])]
+        response=self.post('submit_assignment',[{'id':'add-button','property':'n_clicks','value':1}],state=[{'id':i,'property':p,'value':v} for i,p,v in state],actor='operator')
         self.assertEqual(response.status_code,200)
         self.assertEqual(self.repo.writes,0)
 
-if __name__=='__main__': unittest.main()
+    def test_create_reader_selects_account_and_erases_password(self):
+        values=[('new-login','value','new.reader'),('new-name','value','New Reader'),('new-email','value','new@example.org'),('new-password','value','input-password')]
+        response=self.post('create_reader',[{'id':'create-button','property':'n_clicks','value':1}],state=[{'id':i,'property':p,'value':v} for i,p,v in values],actor='operator')
+        self.assertEqual(response.status_code,200)
+        data=response.get_json()['response']
+        self.assertEqual(data['target-user-dropdown']['value'],'new.reader')
+        self.assertEqual(data['new-password']['value'],'')
+        self.assertNotIn('input-password',response.get_data(as_text=True))
+        self.assertEqual(self.repo.users['new.reader']['userProfile'],'READER')
