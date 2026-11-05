@@ -47,7 +47,7 @@ def build_access_form():
         html.Div([
             step_label('03', 'Groupes du projet et accès proposés'),
             html.Div('Sélectionnez d’abord les projets à partager.', id=ids.GROUP_PLAN, role='status'),
-            html.P('Les groupes admissibles sont classés en premier. Vérifiez les droits avant de confirmer l’attribution.', className='step-help'),
+            html.P('Les groupes sont proposés du moins privilégié au plus privilégié. Les droits sont informatifs : consultez leur détail et leur portée avant de valider.', className='step-help'),
             html.Button('Vérifier les droits', id=ids.PREVIEW_BUTTON, n_clicks=0, disabled=True, className='primary-button'),
         ], id=ids.GROUP_SECTION, className='step is-disabled'),
         build_access_summary(),

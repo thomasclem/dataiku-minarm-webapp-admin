@@ -30,15 +30,15 @@ class EffectivePermissionTest(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertEqual(self.repo.writes,1)
 
-    def test_enabled_or_unknown_uif_keeps_safe_code_blocking(self):
+    def test_enabled_or_unknown_uif_keeps_safe_code_visible_without_blocking(self):
         for enabled in (True,None):
             with self.subTest(enabled=enabled):
                 self.repo.isolation_enabled=enabled
                 plan=self.flow.preview(self.actor,['P'],'target')
-                self.assertFalse(plan['allowedToSubmit'])
+                self.assertTrue(plan['allowedToSubmit'])
                 self.assertIn('mayWriteSafeCode',plan['detectedGroups'][0]['globalCapabilities'])
                 self.assertEqual(plan['detectedGroups'][0]['inactiveGlobalCapabilities'],[])
-                with self.assertRaises(PermissionError): self.flow.submit(self.actor,plan['token'],True,['P'],'target')
+                with self.assertRaises(PermissionError): self.flow.submit(self.actor,plan['token'],False,['P'],'target')
                 self.assertEqual(self.repo.writes,0)
 
     def test_enabling_uif_after_preview_blocks_submission_before_history_or_grant(self):
@@ -57,7 +57,9 @@ class EffectivePermissionTest(unittest.TestCase):
             self.assertIn('mayWriteSafeCode',group_global_capabilities(definition,isolation_enabled=unknown))
         self.repo.groups['viewer']['mayWriteUnsafeCode']=True
         self.repo.isolation_enabled=False
-        self.assertFalse(self.flow.plan(self.actor,['P'],'target')['allowedToSubmit'])
+        plan=self.flow.plan(self.actor,['P'],'target')
+        self.assertTrue(plan['allowedToSubmit'])
+        self.assertIn('mayWriteUnsafeCode',plan['detectedGroups'][0]['globalCapabilities'])
 
     def test_permission_names_are_english_and_use_current_dss_terminology(self):
         self.assertEqual(permission_label('readProjectContent'),'Read project content')
