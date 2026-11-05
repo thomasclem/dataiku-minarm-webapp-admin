@@ -144,3 +144,12 @@ Le compte d’exécution de la webapp doit pouvoir écrire dans ce dataset. Rés
 Le mode local conserve les événements uniquement en mémoire dans `DemoRepository.history`. Les tests couvrent l’ajout sans écrasement, le provisionnement sans remplacement, la corrélation multi-projets, l’absence de secrets, les demandes sans effet et les échecs partiels. Le code de création est fourni mais aucun dataset n’a été créé pendant cette préparation.
 
 Références SDK : https://developer.dataiku.com/latest/concepts-and-examples/datasets/datasets-other.html et https://developer.dataiku.com/latest/concepts-and-examples/datasets/datasets-data.html.
+
+
+## Noms de droits et User Isolation Framework
+
+Les noms des permissions restent en anglais, avec la terminologie DSS : `Read project content`, `Write isolated code`, `Write unisolated code`, etc. Les autres textes de l’interface restent en français.
+
+DSS conserve parfois `mayWriteSafeCode=true` alors que la case `Write isolated code` est masquée parce que le User Isolation Framework est désactivé. Le parcours Reader relit `get_general_settings().get_raw()["impersonation"]["enabled"]` côté serveur lorsqu’un groupe porte ce droit. Uniquement lorsque cette valeur est explicitement le booléen `False`, ce droit est affiché dans les droits inactifs et n’exclut pas le groupe. Les autres capacités globales restent bloquantes. Une valeur absente, mal formée, illisible ou `True` maintient le contrôle conservateur.
+
+Cet état est inclus dans l’empreinte de l’aperçu signé et relu avant attribution : l’activation de l’isolation après une vérification invalide l’aperçu. Aucune modification des réglages d’isolation ou des permissions du groupe n’est effectuée par l’application.

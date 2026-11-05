@@ -16,7 +16,7 @@ def render_alert(result: Optional[Dict[str, Any]]) -> html.Div:
 def render_permission_badges(names) -> html.Div:
     labels = permission_labels(names)
     if not labels:
-        labels = ["Aucun droit supplémentaire détecté"]
+        labels = ["No additional permissions"]
     return html.Div([html.Span(label, className="badge") for label in labels], className="badge-list")
 
 
@@ -77,6 +77,11 @@ def render_detected_groups(groups):
                 html.Div('Droits globaux', className='rights-caption'),
                 render_permission_badges(group['globalCapabilities']),
             ], className='rights-section') if group['globalCapabilities'] else None,
+            html.Div([
+                html.Div('Droits inactifs sur cette instance', className='rights-caption'),
+                render_permission_badges(group['inactiveGlobalCapabilities']),
+                html.P('User Isolation Framework désactivé : ce droit conservé dans la configuration n’est pas pris en compte pour l’attribution.', className='step-help'),
+            ], className='rights-section') if group.get('inactiveGlobalCapabilities') else None,
             html.Div([
                 html.Strong('Motifs de non-attribution', className='reasons-caption'),
                 html.Ul([html.Li(reason) for reason in group['reasons']], className='project-list'),

@@ -186,7 +186,7 @@ class GroupDetectionTest(unittest.TestCase):
         rendered=json.dumps(render_reader_plan(plan),cls=PlotlyJSONEncoder,ensure_ascii=False)
         self.assertIn('DGA',rendered)
         self.assertIn('Non attribuable',rendered)
-        self.assertIn('Modification du projet',rendered)
+        self.assertIn('Write project content',rendered)
 
     def test_eligible_first_and_alternatives_remain_visible(self):
         self.repo.groups['another']={'name':'another','sourceType':'LOCAL','admin':False}

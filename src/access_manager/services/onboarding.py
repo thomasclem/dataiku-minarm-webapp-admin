@@ -86,7 +86,10 @@ class ReaderOnboarding:
         admin = is_instance_admin(actor['raw'], actor_groups, definitions)
         memberships = set(raw_user_groups(raw))
         all_acls = {key: self.access.get_project_permissions(key) for key in self.access.list_project_keys()}
-        candidates, detected = self.inspect_groups(actor, keys, definitions, all_acls, memberships, admin)
+        isolation_enabled = None
+        if any(definition.get('mayWriteSafeCode') is True for definition in definitions.values()):
+            isolation_enabled = self.repository.get_isolation_enabled()
+        candidates, detected = self.inspect_groups(actor, keys, definitions, all_acls, memberships, admin, isolation_enabled=isolation_enabled)
         assignments, blocked = [], []
         for key in keys:
             choices = [c for c in candidates.values() if key in c['projects']]
@@ -120,13 +123,13 @@ class ReaderOnboarding:
             'actor': actor['login'], 'actorRaw': actor['raw'], 'target': target,
             'targetState': {'groups': sorted(memberships), 'profile': raw.get('userProfile'), 'enabled': True},
             'projects': keys, 'definitions': definitions, 'acls': all_acls,
-            'policy': self.access.policy, 'assignments': assignments,
+            'policy': self.access.policy, 'assignments': assignments, 'isolation_enabled': isolation_enabled,
         }
         digest = hashlib.sha256(canonical_json(snapshot).encode()).hexdigest()
         return {'projects': keys, 'target': target, 'assignments': assignments, 'groups': groups,
                 'blockedReasons': blocked, 'allowedToSubmit': not blocked, 'digest': digest, 'detectedGroups': detected}
 
-    def inspect_groups(self, actor, projects, definitions, all_acls, memberships, admin):
+    def inspect_groups(self, actor, projects, definitions, all_acls, memberships, admin, *, isolation_enabled=None):
         """Discover ACL groups first; report eligibility separately without hiding exclusions."""
         actor_groups = raw_user_groups(actor['raw'])
         selected = set(projects)
@@ -139,12 +142,16 @@ class ReaderOnboarding:
             if definition is None:
                 common_reasons.append('La définition du groupe est absente ou inaccessible.')
                 capabilities = []
+                inactive = []
             else:
                 try:
                     validate_group_assignable(definition)
                 except PermissionError as exc:
                     common_reasons.append(str(exc))
-                capabilities = group_global_capabilities(definition)
+                capabilities = group_global_capabilities(definition, isolation_enabled=isolation_enabled)
+                inactive = ['mayWriteSafeCode'] if definition.get('mayWriteSafeCode') is True and isolation_enabled is False else []
+                if definition.get('mayWriteSafeCode') is True and isolation_enabled is None:
+                    common_reasons.append('Impossible de vérifier l’activation du User Isolation Framework ; Write isolated code reste bloquant par précaution.')
                 if capabilities:
                     common_reasons.append('Le groupe possède des capacités globales supplémentaires sur l’instance.')
             affected = []
@@ -170,7 +177,7 @@ class ReaderOnboarding:
                     eligible_projects.append(key)
                 detected.append({
                     'project': key, 'name': name, 'grants': grants,
-                    'globalCapabilities': capabilities, 'eligible': not reasons,
+                    'globalCapabilities': capabilities, 'inactiveGlobalCapabilities': inactive, 'eligible': not reasons,
                     'reasons': reasons, 'alreadyMember': name in memberships,
                     'affectedProjectCount': len(affected),
                     'otherAffectedProjectCount': len([a for a in affected if a['projectKey'] not in selected]),

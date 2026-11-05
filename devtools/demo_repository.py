@@ -85,3 +85,6 @@ class DemoRepository:
 
     def append_access_history(self, rows):
         self.history.extend(deepcopy(rows))
+
+    def get_isolation_enabled(self):
+        return False
