@@ -16,6 +16,7 @@ class FakeRepository:
         self.projects = {'P': {'owner':'operator','permissions':[{'group':'viewer','readProjectContent':True}]}}
         self.writes = 0
         self.capacity = True
+        self.history = []
 
     def auth_info(self, headers): return {'authIdentifier': headers.get('Test-Actor', '')}
     def list_users(self): return copy.deepcopy(list(self.users.values()))
@@ -29,6 +30,9 @@ class FakeRepository:
         self.users[login]['groups'].append(group)
         self.writes += 1
         return True
+
+    def append_access_history(self, rows):
+        self.history.extend(copy.deepcopy(rows))
 
     def reader_capacity(self):
         return {'available':self.capacity, 'message':'Reader disponible' if self.capacity else 'READER indisponible'}
