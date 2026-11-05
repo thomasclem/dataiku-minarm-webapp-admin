@@ -156,3 +156,67 @@ class RepositoryReaderTest(unittest.TestCase):
         self.assertEqual(calls[0][0],('reader','supplied'))
         self.assertEqual(calls[0][1]['profile'],'READER')
         self.assertEqual(calls[0][1]['groups'],[])
+
+class GroupDetectionTest(unittest.TestCase):
+    setUp = OnboardingTest.setUp
+
+    def test_sales_project_dga_is_detected_with_explicit_exclusion_reasons(self):
+        self.repo.groups['DGA']={'name':'DGA','sourceType':'LOCAL','admin':False,'mayCreateProjects':True,'mayWriteSafeCode':True}
+        self.repo.projects['SALES_MIGRATION_HEADLESS']={'owner':'operator','permissions':[
+            {'group':'DGA','admin':False,'editPermissions':True,'readProjectContent':True,
+             'writeProjectContent':True,'exportDatasetsData':True,'readDashboards':False,
+             'writeDashboards':False,'moderateDashboards':False,'publishToDataCollections':True,
+             'shareToWorkspaces':True,'runScenarios':False,'executeApp':False}
+        ]}
+        plan=self.flow.preview(self.actor,['SALES_MIGRATION_HEADLESS'],'target')
+        self.assertEqual(len(plan['detectedGroups']),1)
+        group=plan['detectedGroups'][0]
+        self.assertEqual(group['name'],'DGA')
+        self.assertFalse(group['eligible'])
+        self.assertFalse(group['recommended'])
+        self.assertTrue(any('globales' in reason for reason in group['reasons']))
+        self.assertTrue(any('écriture' in reason for reason in group['reasons']))
+        self.assertFalse(plan['allowedToSubmit'])
+        with self.assertRaises(PermissionError):
+            self.flow.submit(self.actor,plan['token'],True,['SALES_MIGRATION_HEADLESS'],'target')
+        self.assertEqual(self.repo.writes,0)
+        from access_manager.ui.components import render_reader_plan
+        from plotly.utils import PlotlyJSONEncoder
+        import json
+        rendered=json.dumps(render_reader_plan(plan),cls=PlotlyJSONEncoder,ensure_ascii=False)
+        self.assertIn('DGA',rendered)
+        self.assertIn('Non attribuable',rendered)
+        self.assertIn('Modification du projet',rendered)
+
+    def test_eligible_first_and_alternatives_remain_visible(self):
+        self.repo.groups['another']={'name':'another','sourceType':'LOCAL','admin':False}
+        self.repo.groups['writer']={'name':'writer','sourceType':'LOCAL','admin':False}
+        self.repo.projects['P']['permissions'] += [
+            {'group':'another','readProjectContent':True,'writeProjectContent':False,'moderateDashboards':False},
+            {'group':'writer','readProjectContent':True,'writeProjectContent':True},
+        ]
+        self.service.policy['P'].append('another')
+        plan=self.flow.plan(self.actor,['P'],'target')
+        self.assertEqual({g['name'] for g in plan['detectedGroups']},{'viewer','another','writer'})
+        self.assertEqual(plan['detectedGroups'][-1]['name'],'writer')
+        self.assertEqual(sum(g['recommended'] for g in plan['detectedGroups']),1)
+        self.assertEqual(sum(g['eligible'] for g in plan['detectedGroups']),2)
+        self.assertTrue(plan['allowedToSubmit'])
+
+    def test_missing_definition_and_missing_delegation_approval_are_not_hidden(self):
+        self.repo.projects['P']['permissions'].append({'group':'missing','readProjectContent':True})
+        self.service.policy={}
+        plan=self.flow.plan(self.actor,['P'],'target')
+        self.assertEqual({g['name'] for g in plan['detectedGroups']},{'missing','viewer'})
+        viewer=next(g for g in plan['detectedGroups'] if g['name']=='viewer')
+        missing=next(g for g in plan['detectedGroups'] if g['name']=='missing')
+        self.assertTrue(any('politique' in reason for reason in viewer['reasons']))
+        self.assertTrue(any('définition' in reason for reason in missing['reasons']))
+        self.assertFalse(plan['allowedToSubmit'])
+
+    def test_group_without_consultation_is_detected_but_not_eligible(self):
+        self.repo.projects['P']['permissions'][0]={'group':'viewer','readProjectContent':False}
+        plan=self.flow.plan(self.actor,['P'],'target')
+        self.assertEqual(plan['detectedGroups'][0]['name'],'viewer')
+        self.assertFalse(plan['detectedGroups'][0]['eligible'])
+        self.assertIn('Aucun droit de consultation',plan['detectedGroups'][0]['reasons'][0])

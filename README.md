@@ -100,3 +100,10 @@ Le classement est **par projet**, déterministe : consultation des tableaux de b
 L’aperçu signé expire et lie l’opérateur, le bénéficiaire, les projets, les groupes, leurs droits, la politique et les appartenances. Ces données sont recalculées avant sauvegarde. Une autre modification impose une nouvelle vérification. Les autorisations de ressources hors listes d’accès de projets (connexions, dossiers, etc.) ne font pas l’objet d’un inventaire exhaustif ; la portée doit être examinée avant délégation. Le verrou applicatif ne coordonne pas les autres processus DSS ni les modifications administratives externes.
 
 `services/onboarding.py` porte ce parcours ; les opérations SDK restent uniquement dans `repositories/dss.py`. Le point d’entrée DSS reste inchangé. Le dépôt de démonstration local permet de créer des comptes et de partager deux projets uniquement en mémoire.
+
+
+## Détection des groupes et admissibilité
+
+Le formulaire affiche tous les groupes présents dans les listes d’accès des projets sélectionnés, y compris les groupes non attribuables. Le tableau indique les droits, les capacités globales et les motifs de refus : groupe administrateur ou externe, droits dépassant la consultation sur un projet, projet hors périmètre administré, absence de droit de consultation, définition manquante, ou délégation non approuvée. Les groupes admissibles sont classés en premier ; le groupe retenu par projet est identifié comme « Proposé ». Les contrôles d’attribution restent identiques.
+
+Par exemple, un groupe DGA ayant `readProjectContent` et `writeProjectContent`, ou des capacités globales, apparaît avec ses droits et la mention « Non attribuable ». Il n’est plus masqué. Le profil READER du compte ne remplace pas ces contrôles d’autorisation.

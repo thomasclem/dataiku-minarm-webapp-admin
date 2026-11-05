@@ -45,9 +45,9 @@ def build_access_form():
             html.P('Sélectionnez un ou plusieurs projets que vous administrez.', className='step-help'),
         ], id=ids.PROJECT_SECTION, className='step is-disabled'),
         html.Div([
-            step_label('03', 'Groupes de consultation proposés'),
+            step_label('03', 'Groupes du projet et accès proposés'),
             html.Div('Sélectionnez d’abord les projets à partager.', id=ids.GROUP_PLAN, role='status'),
-            html.P('Le groupe le moins privilégié admissible est proposé pour chaque projet. Les groupes administrateurs, les droits d’écriture, les droits inconnus et les capacités globales sont exclus.', className='step-help'),
+            html.P('Les groupes présents dans les projets sont listés avec leurs droits et leur admissibilité. Le groupe de consultation le moins privilégié est proposé pour chaque projet.', className='step-help'),
             html.Button('Vérifier les droits', id=ids.PREVIEW_BUTTON, n_clicks=0, disabled=True, className='primary-button'),
         ], id=ids.GROUP_SECTION, className='step is-disabled'),
         html.Fieldset([
