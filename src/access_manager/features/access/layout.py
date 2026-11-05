@@ -47,9 +47,10 @@ def build_access_form():
         html.Div([
             step_label('03', 'Groupes du projet et accès proposés'),
             html.Div('Sélectionnez d’abord les projets à partager.', id=ids.GROUP_PLAN, role='status'),
-            html.P('Les groupes présents dans les projets sont listés avec leurs droits et leur admissibilité. Le groupe de consultation le moins privilégié est proposé pour chaque projet.', className='step-help'),
+            html.P('Les groupes admissibles sont classés en premier. Vérifiez les droits avant de confirmer l’attribution.', className='step-help'),
             html.Button('Vérifier les droits', id=ids.PREVIEW_BUTTON, n_clicks=0, disabled=True, className='primary-button'),
         ], id=ids.GROUP_SECTION, className='step is-disabled'),
+        build_access_summary(),
         html.Fieldset([
             dcc.Checklist(id=ids.ACK_SCOPE, options=[{'label':'Je confirme avoir pris connaissance des groupes proposés et de leur portée sur les autres projets et ressources de l’instance.', 'value':'ack'}], value=[]),
         ], id=ids.ACK_SECTION, disabled=True, className='ack-area is-disabled'),
@@ -60,4 +61,4 @@ def build_access_form():
 
 
 def build_access_summary():
-    return html.Aside([dcc.Loading(html.Div(id=ids.RESULT, children=render_empty_summary()), type='circle')], className='card summary-card')
+    return html.Div([dcc.Loading(html.Div(id=ids.RESULT, children=render_empty_summary(), role='status'), type='circle')], className='review-slot')
