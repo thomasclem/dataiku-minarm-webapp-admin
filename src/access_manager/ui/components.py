@@ -20,16 +20,10 @@ def render_permission_badges(names) -> html.Div:
     return html.Div([html.Span(label, className="badge") for label in labels], className="badge-list")
 
 
-def render_empty_summary() -> html.Div:
-    return html.Div([
-        html.H2("Récapitulatif de l’habilitation", className="card-heading"),
-        html.Div([
-            html.Div([
-                html.Strong("Aucune attribution préparée"),
-                html.Div("Renseignez les paramètres, puis sélectionnez « Vérifier les droits » pour consulter le récapitulatif."),
-            ])
-        ], className="empty-state"),
-    ])
+def render_empty_summary():
+    # Keep the verification area absent until there is a result to review.
+    return None
+
 
 
 def render_preview(preview: Dict[str, Any]) -> html.Div:
@@ -63,66 +57,69 @@ def render_preview(preview: Dict[str, Any]) -> html.Div:
 
 
 def render_detected_groups(groups):
-    """Show detected ACL groups even when assignment is not permitted."""
-    rows = []
+    """Readable group cards; rights remain visible as individual labels."""
+    cards = []
     for group in groups:
         state = 'Proposé' if group.get('recommended') else ('Admissible' if group['eligible'] else 'Non attribuable')
-        rows.append(html.Tr([
-            html.Td(group['project']),
-            html.Td([
-                html.Strong(group['name']),
-                html.Div(', '.join(permission_labels(group['grants'])) or 'Aucun droit actif', className='step-help'),
-                html.Div('Droits globaux : ' + ', '.join(permission_labels(group['globalCapabilities'])), className='step-help') if group['globalCapabilities'] else None,
-            ]),
-            html.Td([
-                html.Strong(state, className='state-allowed' if group['eligible'] else 'state-blocked'),
-                html.Ul([html.Li(reason) for reason in group['reasons']], className='project-list') if group['reasons'] else None,
-            ]),
-        ]))
-    return html.Div([
-        html.H3(f'Groupes détectés dans les projets ({len(groups)})', className='card-heading'),
-        html.P('Les groupes sont affichés même lorsqu’ils ne peuvent pas être attribués. Les groupes admissibles apparaissent en premier pour chaque projet.', className='step-help'),
-        html.Div(html.Table([
-            html.Thead(html.Tr([html.Th(label, scope='col') for label in ['Projet', 'Groupe et droits', 'Évaluation']])),
-            html.Tbody(rows),
-        ], className='access-plan-table'), className='table-scroll'),
-    ])
+        cards.append(html.Article([
+            html.Div([
+                html.Div([
+                    html.Div(group['project'], className='group-project'),
+                    html.H3(group['name'], className='group-name'),
+                ]),
+                html.Span(state, className='status-label status-allowed' if group['eligible'] else 'status-label status-blocked'),
+            ], className='group-card-header'),
+            html.Div([
+                html.Div('Droits sur le projet', className='rights-caption'),
+                render_permission_badges(group['grants']),
+            ], className='rights-section'),
+            html.Div([
+                html.Div('Droits globaux', className='rights-caption'),
+                render_permission_badges(group['globalCapabilities']),
+            ], className='rights-section') if group['globalCapabilities'] else None,
+            html.Div([
+                html.Strong('Motifs de non-attribution', className='reasons-caption'),
+                html.Ul([html.Li(reason) for reason in group['reasons']], className='project-list'),
+            ], className='group-reasons') if group['reasons'] else None,
+            html.P('L’utilisateur appartient déjà à ce groupe.', className='membership-note') if group.get('alreadyMember') else None,
+        ], className='group-card'))
+    return html.Div(cards, className='group-card-list')
 
 
 def render_reader_plan(plan):
-    rows = [html.Tr([
-        html.Td(a['project']), html.Td(a['group']),
-        html.Td(', '.join(permission_labels(a['grants']))),
-        html.Td('Déjà membre' if a['alreadyMember'] else 'À ajouter'),
-    ]) for a in plan['assignments']]
+    groups = plan.get('detectedGroups') or [
+        dict(name=a['group'], project=a['project'], grants=a['grants'],
+             globalCapabilities=[], eligible=True, recommended=True, reasons=[], alreadyMember=a['alreadyMember'])
+        for a in plan['assignments']
+    ]
+    notice = None
+    if plan['blockedReasons']:
+        notice = html.Div([
+            html.Strong('Aucune attribution possible pour la sélection actuelle.'),
+            html.P('Consultez les motifs indiqués pour chaque groupe ci-dessous.'),
+            html.Ul([html.Li(reason) for reason in plan['blockedReasons']], className='project-list') if not groups else None,
+        ], className='plan-notice')
     return html.Div([
-        html.Div([
-            html.Table([
-                html.Thead(html.Tr([html.Th(v, scope='col') for v in ['Projet', 'Groupe proposé', 'Droits', 'Appartenance']])),
-                html.Tbody(rows),
-            ], className='access-plan-table'),
-        ], className='table-scroll') if rows else html.P('Aucun groupe admissible.'),
-        html.Ul([html.Li(reason) for reason in plan['blockedReasons']], className='project-list') if plan['blockedReasons'] else None,
-        render_detected_groups(plan['detectedGroups']) if plan.get('detectedGroups') else None,
-    ])
+        notice,
+        render_detected_groups(groups) if groups else html.P('Aucun groupe détecté dans les projets sélectionnés.', className='step-help'),
+    ], className='reader-plan')
 
 
 def render_reader_preview(plan):
+    """Inline verification only; the rights and group cards stay in step 03."""
     affected = sorted({a['projectKey'] for group in plan['groups'] for a in group['affectedProjects']})
     outside = sorted(set(affected) - set(plan['projects']))
-    return html.Div([
-        html.H2('Récapitulatif de l’habilitation', className='card-heading'),
-        html.Div('Attribution possible après confirmation' if plan['allowedToSubmit'] else 'Attribution bloquée',
-                 className='state-allowed' if plan['allowedToSubmit'] else 'state-blocked'),
-        html.Div([
-            html.Div('Utilisateur bénéficiaire · Reader', className='summary-label'),
-            html.Div(plan['target'], className='summary-value'),
-        ], className='summary-row'),
-        render_reader_plan(plan),
-        html.Div([
-            html.Strong('Portée des groupes proposés'),
+    allowed = plan['allowedToSubmit']
+    return html.Section([
+        html.H3('Vérification des droits', className='verification-heading'),
+        html.P('Attribution possible après confirmation' if allowed else 'Attribution bloquée',
+               className='state-allowed' if allowed else 'state-blocked'),
+        html.P([
+            html.Strong(plan['target']),
+            f" · Reader · {len(plan['projects'])} projet(s) sélectionné(s) · {len(plan['groups'])} groupe(s) retenu(s)",
+        ], className='verification-context'),
+        html.P('Les motifs de blocage figurent dans les groupes ci-dessus.', className='step-help') if not allowed else html.Div([
             html.P('Autres projets concernés : ' + (', '.join(outside) if outside else 'aucun détecté.')),
-            html.P('Les groupes peuvent aussi être utilisés sur d’autres ressources de l’instance. Ce contrôle porte sur les droits globaux et les listes d’accès des projets ; il ne constitue pas un inventaire de toutes les autorisations de ressources.'),
-        ], className='scope-warning'),
-        html.P('Proposition automatique par projet : consultation des tableaux de bord avant lecture du contenu, puis portée et nombre de droits minimaux. Les groupes identiques sont ajoutés une seule fois.', className='step-help'),
-    ])
+            html.P('Les groupes peuvent aussi donner accès à d’autres ressources de l’instance. Confirmez cette portée avant d’attribuer les accès.', className='step-help'),
+        ], className='verification-scope'),
+    ], className='verification-panel')

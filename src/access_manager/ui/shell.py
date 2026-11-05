@@ -1,7 +1,7 @@
 """Institutional French layout; no SDK calls or service lookups."""
 from dash import dcc, html
 from ..features.access import ids
-from ..features.access.layout import build_access_form, build_access_summary
+from ..features.access.layout import build_access_form
 
 def build_layout():
     return html.Div([
@@ -22,7 +22,6 @@ def build_layout():
             ], className="hero"),
             html.Main([
                 build_access_form(),
-                build_access_summary(),
             ], className="workspace"),
         ], className="app-shell"),
     ])
