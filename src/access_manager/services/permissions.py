@@ -47,9 +47,12 @@ def group_origin(group_def: Dict[str, Any]) -> str:
     return str(group_def.get("sourceType") or group_def.get("type") or group_def.get("origin") or UNKNOWN_ORIGIN)
 
 
-def group_global_capabilities(group_def: Dict[str, Any]) -> List[str]:
+def group_global_capabilities(group_def: Dict[str, Any], *, isolation_enabled=None) -> List[str]:
+    """Only suppress isolated-code permission when UIF is explicitly disabled."""
     caps = []
     for key, value in group_def.items():
+        if key == 'mayWriteSafeCode' and isolation_enabled is False:
+            continue
         if value is True and (key.startswith("may") or key in {"admin", "isAdmin", "superAdmin"}):
             caps.append(key)
     return sorted(caps)

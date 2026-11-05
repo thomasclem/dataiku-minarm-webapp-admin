@@ -161,3 +161,20 @@ class DSSRepository:
                 for row in rows:
                     writer.write_row_dict(row)
         return self._call('écriture de l’historique des habilitations', append)
+
+    def get_isolation_enabled(self):
+        """Return True/False only for an explicit DSS UIF setting; otherwise unknown.
+
+        Never expose, cache or modify the rest of the general settings.
+        """
+        def read(client):
+            raw = client.get_general_settings().get_raw()
+            impersonation = raw.get('impersonation')
+            if not isinstance(impersonation, dict):
+                return None
+            enabled = impersonation.get('enabled')
+            return enabled if type(enabled) is bool else None
+        try:
+            return self._call('lecture de l’activation du User Isolation Framework', read)
+        except RuntimeError:
+            return None

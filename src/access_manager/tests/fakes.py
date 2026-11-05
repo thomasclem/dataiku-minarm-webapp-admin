@@ -15,6 +15,7 @@ class FakeRepository:
         }
         self.projects = {'P': {'owner':'operator','permissions':[{'group':'viewer','readProjectContent':True}]}}
         self.writes = 0
+        self.isolation_enabled = False
         self.capacity = True
         self.history = []
 
@@ -33,6 +34,8 @@ class FakeRepository:
 
     def append_access_history(self, rows):
         self.history.extend(copy.deepcopy(rows))
+
+    def get_isolation_enabled(self): return self.isolation_enabled
 
     def reader_capacity(self):
         return {'available':self.capacity, 'message':'Reader disponible' if self.capacity else 'READER indisponible'}
