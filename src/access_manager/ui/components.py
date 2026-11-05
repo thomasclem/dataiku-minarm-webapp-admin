@@ -83,6 +83,17 @@ def render_detected_groups(groups):
                 html.P('User Isolation Framework désactivé : ce droit conservé dans la configuration n’est pas pris en compte pour l’attribution.', className='step-help'),
             ], className='rights-section') if group.get('inactiveGlobalCapabilities') else None,
             html.Div([
+                html.Strong('Informations à valider', className='reasons-caption'),
+                html.Ul([html.Li(warning) for warning in group['warnings']], className='project-list'),
+            ], className='group-reasons') if group.get('warnings') else None,
+            html.Details([
+                html.Summary('Droits sur les autres projets concernés'),
+                html.Div([
+                    html.Div([html.Strong(item['projectKey']), render_permission_badges(item['grants'])], className='rights-section')
+                    for item in group.get('affectedProjects', []) if item['projectKey'] != group['project']
+                ], className='group-scope-details'),
+            ], className='group-scope') if any(item['projectKey'] != group['project'] for item in group.get('affectedProjects', [])) else None,
+            html.Div([
                 html.Strong('Motifs de non-attribution', className='reasons-caption'),
                 html.Ul([html.Li(reason) for reason in group['reasons']], className='project-list'),
             ], className='group-reasons') if group['reasons'] else None,
@@ -105,6 +116,7 @@ def render_reader_plan(plan):
             html.Ul([html.Li(reason) for reason in plan['blockedReasons']], className='project-list') if not groups else None,
         ], className='plan-notice')
     return html.Div([
+        html.P('Les droits affichés sont ceux des groupes. Leur utilisation dépend également du profil Reader. Consultez leur portée, puis validez explicitement l’attribution.', className='step-help'),
         notice,
         render_detected_groups(groups) if groups else html.P('Aucun groupe détecté dans les projets sélectionnés.', className='step-help'),
     ], className='reader-plan')
@@ -121,7 +133,9 @@ def render_reader_preview(plan):
                className='state-allowed' if allowed else 'state-blocked'),
         html.P([
             html.Strong(plan['target']),
-            f" · Reader · {len(plan['projects'])} projet(s) sélectionné(s) · {len(plan['groups'])} groupe(s) retenu(s)",
+            f" · Reader · {len(plan['projects'])} projet(s) sélectionné(s)",
+            html.Br(),
+            'Groupes à attribuer : ' + (', '.join(group['name'] for group in plan['groups']) or 'aucun'),
         ], className='verification-context'),
         html.P('Les motifs de blocage figurent dans les groupes ci-dessus.', className='step-help') if not allowed else html.Div([
             html.P('Autres projets concernés : ' + (', '.join(outside) if outside else 'aucun détecté.')),

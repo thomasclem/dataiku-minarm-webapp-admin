@@ -129,6 +129,10 @@ fieldset.reader-fields { border: 0; padding: 0; margin: .75rem 0 0; min-width: 0
 details.admin-config { margin-top: .95rem; color: var(--muted); }
 details.admin-config summary { cursor: pointer; font-weight: 650; color: var(--ink); }
 .reader-plan { margin-top: 1rem; }
+.reader-plan > .step-help { margin-bottom: 1.25rem; }
+.group-scope { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.group-scope summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+.group-scope-details { display: grid; gap: 1rem; padding-top: 1rem; }
 .group-card-list { display: grid; gap: 1.25rem; }
 .group-card { padding: 1.35rem; border: 1px solid var(--border); border-radius: 6px; background: #FFF; }
 .group-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }

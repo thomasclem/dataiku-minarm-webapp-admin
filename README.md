@@ -67,11 +67,7 @@ ou déploiement sur un nœud Automation n’est requis pour ce projet.
 
 ## Politique et vérification
 
-La configuration `DELEGABLE_GROUPS_BY_PROJECT` est administrée dans `config.py`.
-Elle reste vide tant qu’un administrateur n’a pas approuvé les couples
-projet/groupe. Les groupes administrateurs sont exclus ; la vérification des
-droits couvre tous les projets concernés. Un aperçu signé, non expiré et
-cohérent avec les sélections est nécessaire avant attribution.
+Le parcours Reader vérifie l’identité de l’opérateur et son administration des projets concernés. Les droits des groupes sont présentés pour validation explicite et servent au classement des propositions ; ils ne constituent pas un filtre de refus automatique. La configuration historique `DELEGABLE_GROUPS_BY_PROJECT` reste utilisée par le service mono-projet hérité, mais n’est plus une condition du parcours Reader multi-projets. Un aperçu signé, non expiré et cohérent avec les sélections est nécessaire avant attribution.
 
 Les tests ne se connectent pas à une instance et n’effectuent aucune écriture
 réelle. Ils couvrent l’autorisation, le classement, la préservation des groupes,
@@ -93,9 +89,9 @@ La cible est une **instance DSS standard avec licence READER**. Le réglage admi
 
 **Dataiku Cloud :** la création et la modification des utilisateurs DSS ne sont pas prises en charge par ces API. Utiliser Launchpad pour cette cible ; cette intégration n’est pas incluse dans le parcours DSS demandé. L’instance Cloud de prévisualisation actuelle ne dispose pas du profil READER ; le bouton de création y reste désactivé.
 
-Les groupes proposés doivent déjà exister, être locaux, non administrateurs, ne porter aucune capacité globale et n’accorder que `readDashboards` ou `readProjectContent` dans les listes d’accès de tous les projets concernés. Tout droit inconnu ou d’écriture exclut le groupe. L’opérateur doit administrer chaque projet sélectionné ainsi que tous les projets également concernés. La politique `DELEGABLE_GROUPS_BY_PROJECT` existante reste obligatoire pour les opérateurs non administrateurs d’instance ; elle est vide par défaut et doit être renseignée par un administrateur après approbation des groupes.
+Les groupes proposés doivent déjà exister et être de source locale pour permettre une mise à jour directe de leurs appartenances. Les droits d’écriture, d’administration du projet, les capacités globales et les droits non reconnus ne bloquent pas automatiquement la proposition : ils sont affichés et doivent être acceptés explicitement. L’opérateur doit administrer chaque projet sélectionné et tous les projets également concernés. L’ajout à un groupe administrateur d’instance nécessite un opérateur lui-même administrateur d’instance ; ce groupe est présenté avec une portée administrative sur tous les projets. La liste `DELEGABLE_GROUPS_BY_PROJECT` vide ne bloque plus ce parcours.
 
-Le classement est **par projet**, déterministe : consultation des tableaux de bord avant lecture du contenu du projet, puis moins de projets hors sélection, moins de droits, appartenance existante en cas d’égalité, puis nom. Il ne prétend pas calculer un optimum combinatoire de toutes les combinaisons de groupes. Les groupes retenus sont dédupliqués et ajoutés en une seule sauvegarde fraîche des paramètres utilisateur. Si un projet n’a aucun groupe admissible, toute l’attribution est bloquée. Aucune modification de groupe ou de liste d’accès de projet n’est effectuée.
+Le classement est **par projet**, déterministe : groupes non administrateurs d’abord, puis sévérité et nombre des capacités globales actives, niveau de droits sur le projet, portée hors sélection, nombre total de droits, appartenance existante et nom. Les droits élevés ne sont pas exclus. Il ne prétend pas calculer un optimum combinatoire de toutes les combinaisons de groupes. Les groupes retenus sont nommés dans le récapitulatif, dédupliqués et ajoutés en une seule sauvegarde fraîche des paramètres utilisateur. Une absence de groupe techniquement attribuable ou un défaut d’autorisation bloque l’opération. Aucune modification des droits d’un groupe ou d’une liste d’accès de projet n’est effectuée.
 
 L’aperçu signé expire et lie l’opérateur, le bénéficiaire, les projets, les groupes, leurs droits, la politique et les appartenances. Ces données sont recalculées avant sauvegarde. Une autre modification impose une nouvelle vérification. Les autorisations de ressources hors listes d’accès de projets (connexions, dossiers, etc.) ne font pas l’objet d’un inventaire exhaustif ; la portée doit être examinée avant délégation. Le verrou applicatif ne coordonne pas les autres processus DSS ni les modifications administratives externes.
 
@@ -104,9 +100,9 @@ L’aperçu signé expire et lie l’opérateur, le bénéficiaire, les projets,
 
 ## Détection des groupes et admissibilité
 
-Le formulaire affiche tous les groupes présents dans les listes d’accès des projets sélectionnés, y compris les groupes non attribuables. Le tableau indique les droits, les capacités globales et les motifs de refus : groupe administrateur ou externe, droits dépassant la consultation sur un projet, projet hors périmètre administré, absence de droit de consultation, définition manquante, ou délégation non approuvée. Les groupes admissibles sont classés en premier ; le groupe retenu par projet est identifié comme « Proposé ». Les contrôles d’attribution restent identiques.
+Le formulaire affiche tous les groupes présents dans les listes d’accès des projets sélectionnés. Les cartes présentent les droits du projet et les capacités globales en anglais, les droits sur les autres projets concernés et les informations de portée à valider. Un groupe avec des droits supplémentaires reste admissible dès lors que l’opérateur est autorisé à l’attribuer et que la source permet de modifier l’appartenance. Le groupe retenu par projet est identifié comme « Proposé ».
 
-Par exemple, un groupe DGA ayant `readProjectContent` et `writeProjectContent`, ou des capacités globales, apparaît avec ses droits et la mention « Non attribuable ». Il n’est plus masqué. Le profil READER du compte ne remplace pas ces contrôles d’autorisation.
+Par exemple, DGA avec `readProjectContent`, `writeProjectContent` et des capacités globales est proposé s’il s’agit du groupe le moins privilégié disponible et si l’opérateur administre les projets concernés. Aucun ajout n’est effectué avant vérification puis confirmation explicite. Les cartes affichent les droits bruts du groupe ; le profil Reader du bénéficiaire limite par ailleurs les fonctionnalités qu’il peut utiliser.
 
 
 ## Historique des accès dans le Flow
@@ -150,6 +146,6 @@ Références SDK : https://developer.dataiku.com/latest/concepts-and-examples/da
 
 Les noms des permissions restent en anglais, avec la terminologie DSS : `Read project content`, `Write isolated code`, `Write unisolated code`, etc. Les autres textes de l’interface restent en français.
 
-DSS conserve parfois `mayWriteSafeCode=true` alors que la case `Write isolated code` est masquée parce que le User Isolation Framework est désactivé. Le parcours Reader relit `get_general_settings().get_raw()["impersonation"]["enabled"]` côté serveur lorsqu’un groupe porte ce droit. Uniquement lorsque cette valeur est explicitement le booléen `False`, ce droit est affiché dans les droits inactifs et n’exclut pas le groupe. Les autres capacités globales restent bloquantes. Une valeur absente, mal formée, illisible ou `True` maintient le contrôle conservateur.
+DSS conserve parfois `mayWriteSafeCode=true` alors que la case `Write isolated code` est masquée parce que le User Isolation Framework est désactivé. Le parcours Reader relit `get_general_settings().get_raw()["impersonation"]["enabled"]` côté serveur lorsqu’un groupe porte ce droit. Uniquement lorsque cette valeur est explicitement le booléen `False`, ce droit est affiché dans les droits inactifs et n’exclut pas le groupe. Une valeur absente, mal formée, illisible ou `True` laisse ce droit affiché comme potentiellement actif avec une information de contexte. Cette valeur ne bloque pas à elle seule l’attribution, conformément au parcours de validation explicite.
 
 Cet état est inclus dans l’empreinte de l’aperçu signé et relu avant attribution : l’activation de l’isolation après une vérification invalide l’aperçu. Aucune modification des réglages d’isolation ou des permissions du groupe n’est effectuée par l’application.

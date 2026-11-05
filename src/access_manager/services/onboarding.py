@@ -7,13 +7,11 @@ from .history import history_rows
 from .audit import structured_audit
 from .permissions import (
     raw_user_groups, is_instance_admin, permission_admin_for_login_or_groups,
-    validate_group_assignable, group_global_capabilities, group_grants_project_read,
+    group_global_capabilities, group_is_admin, group_origin, global_privilege_severity,
     group_acl_rows_by_name, merge_grants, project_permission_tier,
 )
 from .previews import canonical_json
-from ..config import LOW_PRIVILEGES, READ_PRIVILEGES, READER_SOURCE_TYPE
-
-READ_ONLY_GRANTS = LOW_PRIVILEGES | READ_PRIVILEGES
+from ..config import READER_SOURCE_TYPE
 
 
 class ReaderOnboarding:
@@ -97,7 +95,10 @@ class ReaderOnboarding:
                 grants = next(a['grants'] for a in candidate['affectedProjects'] if a['projectKey'] == key)
                 # Prefer existing equivalent membership, then fewer outside projects.
                 return (
-                    int('readProjectContent' in grants),
+                    int(candidate['isAdmin']),
+                    global_privilege_severity(candidate['globalCapabilities']),
+                    len(candidate['globalCapabilities']),
+                    project_permission_tier(grants),
                     len([a for a in candidate['affectedProjects'] if a['projectKey'] not in keys]),
                     sum(len(a['grants']) for a in candidate['affectedProjects']),
                     candidate['name'] not in memberships,
@@ -106,7 +107,7 @@ class ReaderOnboarding:
             if not choices:
                 count = sum(item['project'] == key for item in detected)
                 if count:
-                    blocked.append(f"{key} : {count} groupe(s) détecté(s), mais aucun n’est admissible pour une attribution en consultation. Consultez les motifs ci-dessous.")
+                    blocked.append(f"{key} : {count} groupe(s) détecté(s), mais aucun ne peut être attribué par l’opérateur connecté. Consultez les motifs ci-dessous.")
                 else:
                     blocked.append(f"{key} : aucun groupe n’est présent dans la liste d’accès du projet.")
             else:
@@ -130,7 +131,7 @@ class ReaderOnboarding:
                 'blockedReasons': blocked, 'allowedToSubmit': not blocked, 'digest': digest, 'detectedGroups': detected}
 
     def inspect_groups(self, actor, projects, definitions, all_acls, memberships, admin, *, isolation_enabled=None):
-        """Discover ACL groups first; report eligibility separately without hiding exclusions."""
+        """Rank group rights for informed approval; block only scope/authority/I/O issues."""
         actor_groups = raw_user_groups(actor['raw'])
         selected = set(projects)
         by_project = {key: group_acl_rows_by_name(all_acls[key]) for key in projects}
@@ -139,28 +140,33 @@ class ReaderOnboarding:
         for name in names:
             definition = definitions.get(name)
             common_reasons = []
+            warnings = []
             if definition is None:
                 common_reasons.append('La définition du groupe est absente ou inaccessible.')
                 capabilities = []
                 inactive = []
             else:
-                try:
-                    validate_group_assignable(definition)
-                except PermissionError as exc:
-                    common_reasons.append(str(exc))
+                if group_origin(definition).upper() != 'LOCAL':
+                    common_reasons.append('L’appartenance à ce groupe est gérée par une source externe ou non vérifiable.')
+                if group_is_admin(definition):
+                    warnings.append('Ce groupe est administrateur d’instance : sa portée couvre l’ensemble des projets et ressources de l’instance.')
+                if group_is_admin(definition) and not admin:
+                    common_reasons.append('Seul un administrateur d’instance peut attribuer un groupe administrateur d’instance.')
                 capabilities = group_global_capabilities(definition, isolation_enabled=isolation_enabled)
                 inactive = ['mayWriteSafeCode'] if definition.get('mayWriteSafeCode') is True and isolation_enabled is False else []
                 if definition.get('mayWriteSafeCode') is True and isolation_enabled is None:
-                    common_reasons.append('Impossible de vérifier l’activation du User Isolation Framework ; Write isolated code reste bloquant par précaution.')
+                    warnings.append('L’état du User Isolation Framework n’a pas pu être vérifié ; Write isolated code est présenté comme potentiellement actif.')
                 if capabilities:
-                    common_reasons.append('Le groupe possède des capacités globales supplémentaires sur l’instance.')
+                    warnings.append('Ce groupe possède des droits globaux sur l’instance. Leur détail doit être validé avant attribution.')
             affected = []
             for key, acl in all_acls.items():
                 grants = merge_grants(group_acl_rows_by_name(acl).get(name, []))
+                if definition is not None and group_is_admin(definition):
+                    grants = dict(grants, admin=True)
                 if grants:
                     affected.append({'projectKey': key, 'grants': grants})
-            if any(not set(item['grants']).issubset(READ_ONLY_GRANTS) for item in affected):
-                common_reasons.append('Le groupe accorde des droits autres que la consultation sur au moins un projet (écriture, administration ou droit non pris en charge).')
+            if any(project_permission_tier(item['grants']) >= 2 for item in affected):
+                warnings.append('Ce groupe comprend des droits supplémentaires à la consultation. Ils sont indiqués à titre d’information et ne bloquent pas l’attribution.')
             if not admin and any(not permission_admin_for_login_or_groups(all_acls[item['projectKey']], actor['login'], actor_groups) for item in affected):
                 common_reasons.append('Vous n’administrez pas tous les projets également concernés par ce groupe.')
             eligible_projects = []
@@ -169,24 +175,26 @@ class ReaderOnboarding:
                     continue
                 grants = merge_grants(by_project[key][name])
                 reasons = list(common_reasons)
-                if not group_grants_project_read(grants):
-                    reasons.append('Aucun droit de consultation suffisant sur ce projet.')
-                if not admin and name not in self.access.policy.get(key, []):
-                    reasons.append('Ce couple projet/groupe n’est pas approuvé dans la politique de délégation.')
+                if not grants:
+                    reasons.append('Ce groupe ne dispose d’aucun droit actif sur le projet.')
                 if not reasons:
                     eligible_projects.append(key)
                 detected.append({
                     'project': key, 'name': name, 'grants': grants,
                     'globalCapabilities': capabilities, 'inactiveGlobalCapabilities': inactive, 'eligible': not reasons,
-                    'reasons': reasons, 'alreadyMember': name in memberships,
+                    'reasons': reasons, 'warnings': list(warnings), 'alreadyMember': name in memberships,
+                    'affectedProjects': affected,
                     'affectedProjectCount': len(affected),
                     'otherAffectedProjectCount': len([a for a in affected if a['projectKey'] not in selected]),
                 })
             if eligible_projects:
-                candidates[name] = {'name': name, 'projects': sorted(eligible_projects), 'affectedProjects': affected}
+                candidates[name] = {'name': name, 'projects': sorted(eligible_projects), 'affectedProjects': affected,
+                                    'isAdmin': group_is_admin(definition), 'globalCapabilities': capabilities}
         detected.sort(key=lambda item: (
-            item['project'], not item['eligible'], project_permission_tier(item['grants']),
-            len(item['globalCapabilities']), item['otherAffectedProjectCount'],
+            item['project'], not item['eligible'],
+            int(group_is_admin(definitions.get(item['name'], {}))),
+            global_privilege_severity(item['globalCapabilities']), len(item['globalCapabilities']),
+            project_permission_tier(item['grants']), item['otherAffectedProjectCount'],
             len(item['grants']), item['name'].lower(),
         ))
         return candidates, detected

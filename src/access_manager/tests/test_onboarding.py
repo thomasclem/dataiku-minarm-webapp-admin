@@ -60,13 +60,10 @@ class OnboardingTest(unittest.TestCase):
         self.service.policy['P'].append('dashboard')
         self.assertEqual(self.flow.plan(self.actor,['P'],'target')['assignments'][0]['group'],'dashboard')
 
-    def test_admin_write_global_external_unknown_and_outside_scope_rejected(self):
+    def test_unauthorized_admin_external_and_outside_scope_rejected(self):
         mutations=[
             lambda: self.repo.groups['viewer'].update(admin=True),
-            lambda: self.repo.groups['viewer'].update(mayCreateProjects=True),
             lambda: self.repo.groups['viewer'].update(sourceType='LDAP'),
-            lambda: self.repo.projects['P']['permissions'][0].update(writeProjectContent=True),
-            lambda: self.repo.projects['P']['permissions'][0].update(futurePermission=True),
             lambda: self.repo.projects.update(Q={'owner':'other','permissions':[{'group':'viewer','readDashboards':True}]}),
         ]
         for mutate in mutations:
@@ -160,7 +157,7 @@ class RepositoryReaderTest(unittest.TestCase):
 class GroupDetectionTest(unittest.TestCase):
     setUp = OnboardingTest.setUp
 
-    def test_sales_project_dga_is_detected_with_explicit_exclusion_reasons(self):
+    def test_sales_project_dga_rights_are_informative_and_require_confirmation(self):
         self.repo.groups['DGA']={'name':'DGA','sourceType':'LOCAL','admin':False,'mayCreateProjects':True,'mayWriteSafeCode':True}
         self.repo.projects['SALES_MIGRATION_HEADLESS']={'owner':'operator','permissions':[
             {'group':'DGA','admin':False,'editPermissions':True,'readProjectContent':True,
@@ -172,20 +169,25 @@ class GroupDetectionTest(unittest.TestCase):
         self.assertEqual(len(plan['detectedGroups']),1)
         group=plan['detectedGroups'][0]
         self.assertEqual(group['name'],'DGA')
-        self.assertFalse(group['eligible'])
-        self.assertFalse(group['recommended'])
-        self.assertTrue(any('globales' in reason for reason in group['reasons']))
-        self.assertTrue(any('écriture' in reason for reason in group['reasons']))
-        self.assertFalse(plan['allowedToSubmit'])
+        self.assertTrue(group['eligible'])
+        self.assertTrue(group['recommended'])
+        self.assertEqual(group['reasons'],[])
+        self.assertIn('mayCreateProjects',group['globalCapabilities'])
+        self.assertTrue(group['warnings'])
+        self.assertTrue(plan['allowedToSubmit'])
         with self.assertRaises(PermissionError):
-            self.flow.submit(self.actor,plan['token'],True,['SALES_MIGRATION_HEADLESS'],'target')
+            self.flow.submit(self.actor,plan['token'],False,['SALES_MIGRATION_HEADLESS'],'target')
         self.assertEqual(self.repo.writes,0)
+        result=self.flow.submit(self.actor,plan['token'],True,['SALES_MIGRATION_HEADLESS'],'target')
+        self.assertTrue(result['ok'])
+        self.assertEqual(self.repo.writes,1)
         from access_manager.ui.components import render_reader_plan
         from plotly.utils import PlotlyJSONEncoder
         import json
         rendered=json.dumps(render_reader_plan(plan),cls=PlotlyJSONEncoder,ensure_ascii=False)
         self.assertIn('DGA',rendered)
-        self.assertIn('Non attribuable',rendered)
+        self.assertIn('Proposé',rendered)
+        self.assertIn('Informations à valider',rendered)
         self.assertIn('Write project content',rendered)
 
     def test_eligible_first_and_alternatives_remain_visible(self):
@@ -200,23 +202,80 @@ class GroupDetectionTest(unittest.TestCase):
         self.assertEqual({g['name'] for g in plan['detectedGroups']},{'viewer','another','writer'})
         self.assertEqual(plan['detectedGroups'][-1]['name'],'writer')
         self.assertEqual(sum(g['recommended'] for g in plan['detectedGroups']),1)
-        self.assertEqual(sum(g['eligible'] for g in plan['detectedGroups']),2)
+        self.assertEqual(sum(g['eligible'] for g in plan['detectedGroups']),3)
         self.assertTrue(plan['allowedToSubmit'])
 
-    def test_missing_definition_and_missing_delegation_approval_are_not_hidden(self):
+    def test_missing_definition_blocks_but_absent_delegation_allowlist_does_not(self):
         self.repo.projects['P']['permissions'].append({'group':'missing','readProjectContent':True})
         self.service.policy={}
         plan=self.flow.plan(self.actor,['P'],'target')
         self.assertEqual({g['name'] for g in plan['detectedGroups']},{'missing','viewer'})
         viewer=next(g for g in plan['detectedGroups'] if g['name']=='viewer')
         missing=next(g for g in plan['detectedGroups'] if g['name']=='missing')
-        self.assertTrue(any('politique' in reason for reason in viewer['reasons']))
+        self.assertEqual(viewer['reasons'],[])
+        self.assertTrue(viewer['eligible'])
         self.assertTrue(any('définition' in reason for reason in missing['reasons']))
-        self.assertFalse(plan['allowedToSubmit'])
+        self.assertTrue(plan['allowedToSubmit'])
 
     def test_group_without_consultation_is_detected_but_not_eligible(self):
         self.repo.projects['P']['permissions'][0]={'group':'viewer','readProjectContent':False}
         plan=self.flow.plan(self.actor,['P'],'target')
         self.assertEqual(plan['detectedGroups'][0]['name'],'viewer')
         self.assertFalse(plan['detectedGroups'][0]['eligible'])
-        self.assertIn('Aucun droit de consultation',plan['detectedGroups'][0]['reasons'][0])
+        self.assertIn('aucun droit actif',plan['detectedGroups'][0]['reasons'][0])
+
+class InformedApprovalTest(unittest.TestCase):
+    setUp = OnboardingTest.setUp
+
+    def test_global_write_and_unknown_rights_are_disclosed_without_blocking(self):
+        self.service.policy={}
+        self.repo.groups['viewer'].update(mayCreateProjects=True,mayWriteUnsafeCode=True)
+        self.repo.projects['P']['permissions'][0].update(writeProjectContent=True,futurePermission=True)
+        plan=self.flow.preview(self.actor,['P'],'target')
+        self.assertTrue(plan['allowedToSubmit'])
+        info=plan['detectedGroups'][0]
+        self.assertIn('writeProjectContent',info['grants'])
+        self.assertIn('futurePermission',info['grants'])
+        self.assertIn('mayWriteUnsafeCode',info['globalCapabilities'])
+        self.assertEqual(info['reasons'],[])
+        self.assertTrue(info['warnings'])
+        self.assertEqual(self.repo.writes,0)
+        with self.assertRaises(PermissionError): self.flow.submit(self.actor,plan['token'],False,['P'],'target')
+        self.assertTrue(self.flow.submit(self.actor,plan['token'],True,['P'],'target')['ok'])
+
+    def test_read_only_group_is_proposed_before_more_privileged_alternative(self):
+        self.repo.groups['powerful']={'name':'powerful','sourceType':'LOCAL','mayCreateProjects':True}
+        self.repo.projects['P']['permissions'].append({'group':'powerful','readProjectContent':True,'writeProjectContent':True})
+        plan=self.flow.plan(self.actor,['P'],'target')
+        self.assertEqual(plan['assignments'][0]['group'],'viewer')
+        self.assertEqual([g['name'] for g in plan['detectedGroups']],['viewer','powerful'])
+        self.assertTrue(all(g['eligible'] for g in plan['detectedGroups']))
+
+    def test_write_permission_without_explicit_read_bit_is_still_proposed(self):
+        self.repo.projects['P']['permissions'][0]={'group':'viewer','writeProjectContent':True}
+        self.assertTrue(self.flow.plan(self.actor,['P'],'target')['allowedToSubmit'])
+
+    def test_scope_details_include_rights_on_other_administered_projects(self):
+        self.repo.projects['Q']={'owner':'operator','permissions':[{'group':'viewer','writeProjectContent':True}]}
+        plan=self.flow.preview(self.actor,['P'],'target')
+        self.assertTrue(plan['allowedToSubmit'])
+        group=plan['detectedGroups'][0]
+        self.assertEqual(group['otherAffectedProjectCount'],1)
+        self.assertEqual(next(p['grants'] for p in group['affectedProjects'] if p['projectKey']=='Q'),{'writeProjectContent':True})
+        from access_manager.ui.components import render_reader_plan
+        from plotly.utils import PlotlyJSONEncoder
+        import json
+        rendered=json.dumps(render_reader_plan(plan),cls=PlotlyJSONEncoder,ensure_ascii=False)
+        self.assertIn('Droits sur les autres projets concernés',rendered)
+        self.assertIn('Write project content',rendered)
+        self.assertIn('Q',rendered)
+
+    def test_instance_admin_can_propose_admin_group_with_its_full_project_scope(self):
+        self.repo.groups['viewer']['admin']=True
+        self.repo.projects['Q']={'owner':'other','permissions':[]}
+        root=self.service.authenticate({'Test-Actor':'root'})
+        plan=self.flow.preview(root,['P'],'target')
+        self.assertTrue(plan['allowedToSubmit'])
+        self.assertEqual({p['projectKey'] for p in plan['groups'][0]['affectedProjects']},{'P','Q'})
+        self.assertTrue(any('administrateur d’instance' in w for w in plan['detectedGroups'][0]['warnings']))
+        with self.assertRaises(PermissionError): self.flow.submit(root,plan['token'],False,['P'],'target')
