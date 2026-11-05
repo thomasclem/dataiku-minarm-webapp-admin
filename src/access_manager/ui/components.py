@@ -62,6 +62,33 @@ def render_preview(preview: Dict[str, Any]) -> html.Div:
     ])
 
 
+def render_detected_groups(groups):
+    """Show detected ACL groups even when assignment is not permitted."""
+    rows = []
+    for group in groups:
+        state = 'Proposé' if group.get('recommended') else ('Admissible' if group['eligible'] else 'Non attribuable')
+        rows.append(html.Tr([
+            html.Td(group['project']),
+            html.Td([
+                html.Strong(group['name']),
+                html.Div(', '.join(permission_labels(group['grants'])) or 'Aucun droit actif', className='step-help'),
+                html.Div('Droits globaux : ' + ', '.join(permission_labels(group['globalCapabilities'])), className='step-help') if group['globalCapabilities'] else None,
+            ]),
+            html.Td([
+                html.Strong(state, className='state-allowed' if group['eligible'] else 'state-blocked'),
+                html.Ul([html.Li(reason) for reason in group['reasons']], className='project-list') if group['reasons'] else None,
+            ]),
+        ]))
+    return html.Div([
+        html.H3(f'Groupes détectés dans les projets ({len(groups)})', className='card-heading'),
+        html.P('Les groupes sont affichés même lorsqu’ils ne peuvent pas être attribués. Les groupes admissibles apparaissent en premier pour chaque projet.', className='step-help'),
+        html.Div(html.Table([
+            html.Thead(html.Tr([html.Th(label, scope='col') for label in ['Projet', 'Groupe et droits', 'Évaluation']])),
+            html.Tbody(rows),
+        ], className='access-plan-table'), className='table-scroll'),
+    ])
+
+
 def render_reader_plan(plan):
     rows = [html.Tr([
         html.Td(a['project']), html.Td(a['group']),
@@ -76,6 +103,7 @@ def render_reader_plan(plan):
             ], className='access-plan-table'),
         ], className='table-scroll') if rows else html.P('Aucun groupe admissible.'),
         html.Ul([html.Li(reason) for reason in plan['blockedReasons']], className='project-list') if plan['blockedReasons'] else None,
+        render_detected_groups(plan['detectedGroups']) if plan.get('detectedGroups') else None,
     ])
 
 

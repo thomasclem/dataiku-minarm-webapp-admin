@@ -100,3 +100,47 @@ Le classement est **par projet**, déterministe : consultation des tableaux de b
 L’aperçu signé expire et lie l’opérateur, le bénéficiaire, les projets, les groupes, leurs droits, la politique et les appartenances. Ces données sont recalculées avant sauvegarde. Une autre modification impose une nouvelle vérification. Les autorisations de ressources hors listes d’accès de projets (connexions, dossiers, etc.) ne font pas l’objet d’un inventaire exhaustif ; la portée doit être examinée avant délégation. Le verrou applicatif ne coordonne pas les autres processus DSS ni les modifications administratives externes.
 
 `services/onboarding.py` porte ce parcours ; les opérations SDK restent uniquement dans `repositories/dss.py`. Le point d’entrée DSS reste inchangé. Le dépôt de démonstration local permet de créer des comptes et de partager deux projets uniquement en mémoire.
+
+
+## Détection des groupes et admissibilité
+
+Le formulaire affiche tous les groupes présents dans les listes d’accès des projets sélectionnés, y compris les groupes non attribuables. Le tableau indique les droits, les capacités globales et les motifs de refus : groupe administrateur ou externe, droits dépassant la consultation sur un projet, projet hors périmètre administré, absence de droit de consultation, définition manquante, ou délégation non approuvée. Les groupes admissibles sont classés en premier ; le groupe retenu par projet est identifié comme « Proposé ». Les contrôles d’attribution restent identiques.
+
+Par exemple, un groupe DGA ayant `readProjectContent` et `writeProjectContent`, ou des capacités globales, apparaît avec ses droits et la mention « Non attribuable ». Il n’est plus masqué. Le profil READER du compte ne remplace pas ces contrôles d’autorisation.
+
+
+## Historique des accès dans le Flow
+
+Le dataset **managé** `WEBAPP_ACCESS_MANAGER.access_granted_history` reçoit l’historique des attributions du parcours Reader. Il est créé explicitement une seule fois avant la mise en service ; les callbacks ne créent pas de dataset et ne changent jamais son schéma. La connexion est choisie par l’administrateur parmi les connexions existantes autorisant des datasets managés.
+
+Après import de la bibliothèque, exécuter dans un notebook Python du projet DSS :
+
+```python
+from access_manager.repositories.dss import DSSRepository
+DSSRepository().provision_access_history("NOM_CONNEXION_MANAGEE_EXISTANTE")
+```
+
+Ou, depuis un terminal disposant du runtime Python et du contexte d’authentification du DSS cible :
+
+```sh
+python -m access_manager.setup_history --connection NOM_CONNEXION_MANAGEE_EXISTANTE
+```
+
+Le nom de connexion ci-dessus est un paramètre à remplacer, pas une connexion créée par l’application. Aucun mot de passe ou clé API ne doit être passé dans cette commande. La création utilise le constructeur DSS `new_managed_dataset`, avec `overwrite=False` et un schéma explicite. Si le dataset existe déjà, le provisionnement vérifie le caractère managé, la connexion et le schéma sans modifier les données. Un schéma différent doit être examiné par un administrateur ; il n’est jamais réécrit automatiquement. Une fois créé, ce dataset apparaît dans le Flow sans recette de reconstruction, puisqu’il est alimenté par la webapp.
+
+Une ligne décrit un couple projet/groupe pour une opération : `record_id`, `event_id`, `ts_utc`, `actor_login`, `beneficiary_login`, `project_key`, `group_name`, `outcome`, `user_profile`, `project_permissions_json`, `affected_projects_json`, `source`. Les horodatages sont en UTC. Tous les projets d’une même attribution partagent un `event_id`, même lorsqu’un groupe commun n’est ajouté qu’une seule fois. Aucun mot de passe, en-tête HTTP, aperçu signé ou réglage utilisateur brut n’est conservé.
+
+Les événements sont ajoutés avec `appendMode=True` et `write_row_dict`, sans lecture/réécriture du dataset ni inférence de schéma :
+
+- `REQUESTED` : demande validée et enregistrée avant toute modification des appartenances.
+- `GRANTED` : appartenance ajoutée et vérifiée. Filtrer sur ce statut pour les nouvelles attributions confirmées.
+- `ALREADY_MEMBER` : appartenance déjà présente ; aucune nouvelle attribution pour ce groupe.
+- `UNVERIFIED` : l’écriture des appartenances ou sa vérification n’a pas pu être confirmée ; contrôler le compte avant toute nouvelle tentative.
+
+Une prévisualisation ou une demande rejetée avant soumission ne produit pas de ligne. Si l’enregistrement initial échoue, aucun accès n’est modifié. Si la finalisation de l’historique échoue après une attribution vérifiée, l’interface affiche un échec partiel avec la référence de l’opération et demande de contrôler l’historique, sans inviter à relancer l’attribution. Une ligne `REQUESTED` sans résultat final indique une opération à rapprocher des appartenances effectives. Les changements de groupes et l’historique ne constituent pas une transaction atomique DSS ; le journal structuré contient également l’identifiant de corrélation en cas de problème.
+
+Le compte d’exécution de la webapp doit pouvoir écrire dans ce dataset. Réserver l’accès au dataset aux administrateurs chargés de la traçabilité. Ne pas lui appliquer de recette de reconstruction ou d’écriture en remplacement. Le verrou applicatif sérialise les soumissions au sein d’un processus ; utiliser un seul processus de backend pour les stockages fichiers. Pour plusieurs processus/instances, choisir un stockage SQL managé supportant les écritures concurrentes et vérifier cette configuration sur l’instance cible.
+
+Le mode local conserve les événements uniquement en mémoire dans `DemoRepository.history`. Les tests couvrent l’ajout sans écrasement, le provisionnement sans remplacement, la corrélation multi-projets, l’absence de secrets, les demandes sans effet et les échecs partiels. Le code de création est fourni mais aucun dataset n’a été créé pendant cette préparation.
+
+Références SDK : https://developer.dataiku.com/latest/concepts-and-examples/datasets/datasets-other.html et https://developer.dataiku.com/latest/concepts-and-examples/datasets/datasets-data.html.

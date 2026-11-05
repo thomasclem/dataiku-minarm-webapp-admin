@@ -4,6 +4,7 @@ from copy import deepcopy
 
 class DemoRepository:
     def __init__(self):
+        self.history = []
         self.users = {
             "agent.demo": {
                 "login": "agent.demo", "enabled": True, "groups": ["administrators"]
@@ -81,3 +82,6 @@ class DemoRepository:
             raise ValueError('Profil Reader requis.')
         self.users[login]['groups']=sorted(set(self.users[login]['groups']) | set(groups))
         return True
+
+    def append_access_history(self, rows):
+        self.history.extend(deepcopy(rows))

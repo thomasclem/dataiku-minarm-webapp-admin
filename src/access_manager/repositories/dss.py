@@ -104,3 +104,60 @@ class DSSRepository:
                 raise RuntimeError('Écriture effectuée, mais vérification incomplète. Faites contrôler le compte avant de réessayer.')
             return True
         return self._call('attribution des groupes Reader et vérification', update)
+
+    def provision_access_history(self, connection):
+        """Explicit administrator setup: create a managed Flow dataset, never replace data.
+
+        Run on the target DSS instance after choosing an existing managed-storage
+        connection. This is not called by layout builders or request callbacks.
+        """
+        from ..config import ACCESS_HISTORY_PROJECT_KEY, ACCESS_HISTORY_DATASET
+        from ..services.history import HISTORY_SCHEMA
+        if not isinstance(connection, str) or not connection.strip():
+            raise ValueError('Une connexion de stockage managé est obligatoire.')
+        def provision(client):
+            project = client.get_project(ACCESS_HISTORY_PROJECT_KEY)
+            builder = project.new_managed_dataset(ACCESS_HISTORY_DATASET)
+            if builder.already_exists():
+                dataset = project.get_dataset(ACCESS_HISTORY_DATASET)
+                self._validate_history_handle(dataset)
+                current = dataset.get_settings().get_raw().get('params', {}).get('connection')
+                if current != connection:
+                    raise ValueError('Le dataset existe sur une autre connexion ; aucune modification effectuée.')
+                return {'created': False, 'dataset': ACCESS_HISTORY_DATASET}
+            builder.with_store_into(connection)
+            dataset = builder.create(overwrite=False)
+            dataset.set_schema({'columns': [dict(column) for column in HISTORY_SCHEMA]})
+            self._validate_history_handle(dataset)
+            return {'created': True, 'dataset': ACCESS_HISTORY_DATASET}
+        return self._call('création du dataset managé d’historique', provision)
+
+    @staticmethod
+    def _validate_history_handle(dataset):
+        from ..services.history import HISTORY_SCHEMA
+        if dataset.get_settings().get_raw().get('managed') is not True:
+            raise ValueError('Le dataset d’historique doit être managé.')
+        columns = dataset.get_schema().get('columns', [])
+        actual = [(column['name'], column['type']) for column in columns]
+        expected = [(column['name'], column['type']) for column in HISTORY_SCHEMA]
+        if actual != expected:
+            raise ValueError('Le schéma du dataset d’historique est incompatible ; aucune donnée modifiée.')
+
+    def append_access_history(self, rows):
+        """Append rows without rewriting the schema or reading/replacing existing history."""
+        from ..config import ACCESS_HISTORY_PROJECT_KEY, ACCESS_HISTORY_DATASET
+        from ..services.history import HISTORY_SCHEMA
+        if not rows:
+            return
+        expected = {column['name'] for column in HISTORY_SCHEMA}
+        if any(set(row) != expected for row in rows):
+            raise ValueError('Une ligne d’historique ne respecte pas le schéma attendu.')
+        def append(client):
+            dataset = client.get_project(ACCESS_HISTORY_PROJECT_KEY).get_dataset(ACCESS_HISTORY_DATASET)
+            self._validate_history_handle(dataset)
+            core = dataset.get_as_core_dataset()
+            core.spec_item['appendMode'] = True
+            with core.get_writer() as writer:
+                for row in rows:
+                    writer.write_row_dict(row)
+        return self._call('écriture de l’historique des habilitations', append)

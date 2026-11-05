@@ -2,11 +2,13 @@
 import hashlib
 import re
 import time
+from uuid import uuid4
+from .history import history_rows
 from .audit import structured_audit
 from .permissions import (
     raw_user_groups, is_instance_admin, permission_admin_for_login_or_groups,
     validate_group_assignable, group_global_capabilities, group_grants_project_read,
-    group_acl_rows_by_name, merge_grants,
+    group_acl_rows_by_name, merge_grants, project_permission_tier,
 )
 from .previews import canonical_json
 from ..config import LOW_PRIVILEGES, READ_PRIVILEGES, READER_SOURCE_TYPE
@@ -84,31 +86,7 @@ class ReaderOnboarding:
         admin = is_instance_admin(actor['raw'], actor_groups, definitions)
         memberships = set(raw_user_groups(raw))
         all_acls = {key: self.access.get_project_permissions(key) for key in self.access.list_project_keys()}
-        candidates = {}
-        for name, definition in definitions.items():
-            try:
-                validate_group_assignable(definition)
-            except PermissionError:
-                continue
-            if group_global_capabilities(definition):
-                continue
-            affected = []
-            for key, acl in all_acls.items():
-                grants = merge_grants(group_acl_rows_by_name(acl).get(name, []))
-                if grants:
-                    affected.append({'projectKey': key, 'grants': grants})
-            if not affected or any(not set(a['grants']).issubset(READ_ONLY_GRANTS) for a in affected):
-                continue
-            if not admin and any(not permission_admin_for_login_or_groups(all_acls[a['projectKey']], actor['login'], actor_groups) for a in affected):
-                continue
-            eligible = {
-                a['projectKey'] for a in affected
-                if a['projectKey'] in keys and group_grants_project_read(a['grants'])
-                and (admin or name in self.access.policy.get(a['projectKey'], []))
-            }
-            if not eligible:
-                continue
-            candidates[name] = {'name': name, 'projects': sorted(eligible), 'affectedProjects': affected}
+        candidates, detected = self.inspect_groups(actor, keys, definitions, all_acls, memberships, admin)
         assignments, blocked = [], []
         for key in keys:
             choices = [c for c in candidates.values() if key in c['projects']]
@@ -123,11 +101,18 @@ class ReaderOnboarding:
                     candidate['name'].lower(),
                 )
             if not choices:
-                blocked.append(f"{key} : aucun groupe local de consultation admissible. Un administrateur doit configurer un groupe existant approprié et, pour une délégation, l’autoriser dans la politique.")
+                count = sum(item['project'] == key for item in detected)
+                if count:
+                    blocked.append(f"{key} : {count} groupe(s) détecté(s), mais aucun n’est admissible pour une attribution en consultation. Consultez les motifs ci-dessous.")
+                else:
+                    blocked.append(f"{key} : aucun groupe n’est présent dans la liste d’accès du projet.")
             else:
                 chosen = min(choices, key=rank)
                 grants = next(a['grants'] for a in chosen['affectedProjects'] if a['projectKey'] == key)
                 assignments.append({'project': key, 'group': chosen['name'], 'grants': grants, 'alreadyMember': chosen['name'] in memberships})
+        chosen_pairs = {(a['project'], a['group']) for a in assignments}
+        for item in detected:
+            item['recommended'] = (item['project'], item['name']) in chosen_pairs
         names = sorted({a['group'] for a in assignments})
         groups = [dict(candidates[name], alreadyMember=name in memberships) for name in names]
         # Full snapshot detects ACL, policy, identity, profile and membership changes.
@@ -139,7 +124,65 @@ class ReaderOnboarding:
         }
         digest = hashlib.sha256(canonical_json(snapshot).encode()).hexdigest()
         return {'projects': keys, 'target': target, 'assignments': assignments, 'groups': groups,
-                'blockedReasons': blocked, 'allowedToSubmit': not blocked, 'digest': digest}
+                'blockedReasons': blocked, 'allowedToSubmit': not blocked, 'digest': digest, 'detectedGroups': detected}
+
+    def inspect_groups(self, actor, projects, definitions, all_acls, memberships, admin):
+        """Discover ACL groups first; report eligibility separately without hiding exclusions."""
+        actor_groups = raw_user_groups(actor['raw'])
+        selected = set(projects)
+        by_project = {key: group_acl_rows_by_name(all_acls[key]) for key in projects}
+        names = sorted({name for rows in by_project.values() for name in rows})
+        candidates, detected = {}, []
+        for name in names:
+            definition = definitions.get(name)
+            common_reasons = []
+            if definition is None:
+                common_reasons.append('La définition du groupe est absente ou inaccessible.')
+                capabilities = []
+            else:
+                try:
+                    validate_group_assignable(definition)
+                except PermissionError as exc:
+                    common_reasons.append(str(exc))
+                capabilities = group_global_capabilities(definition)
+                if capabilities:
+                    common_reasons.append('Le groupe possède des capacités globales supplémentaires sur l’instance.')
+            affected = []
+            for key, acl in all_acls.items():
+                grants = merge_grants(group_acl_rows_by_name(acl).get(name, []))
+                if grants:
+                    affected.append({'projectKey': key, 'grants': grants})
+            if any(not set(item['grants']).issubset(READ_ONLY_GRANTS) for item in affected):
+                common_reasons.append('Le groupe accorde des droits autres que la consultation sur au moins un projet (écriture, administration ou droit non pris en charge).')
+            if not admin and any(not permission_admin_for_login_or_groups(all_acls[item['projectKey']], actor['login'], actor_groups) for item in affected):
+                common_reasons.append('Vous n’administrez pas tous les projets également concernés par ce groupe.')
+            eligible_projects = []
+            for key in projects:
+                if name not in by_project[key]:
+                    continue
+                grants = merge_grants(by_project[key][name])
+                reasons = list(common_reasons)
+                if not group_grants_project_read(grants):
+                    reasons.append('Aucun droit de consultation suffisant sur ce projet.')
+                if not admin and name not in self.access.policy.get(key, []):
+                    reasons.append('Ce couple projet/groupe n’est pas approuvé dans la politique de délégation.')
+                if not reasons:
+                    eligible_projects.append(key)
+                detected.append({
+                    'project': key, 'name': name, 'grants': grants,
+                    'globalCapabilities': capabilities, 'eligible': not reasons,
+                    'reasons': reasons, 'alreadyMember': name in memberships,
+                    'affectedProjectCount': len(affected),
+                    'otherAffectedProjectCount': len([a for a in affected if a['projectKey'] not in selected]),
+                })
+            if eligible_projects:
+                candidates[name] = {'name': name, 'projects': sorted(eligible_projects), 'affectedProjects': affected}
+        detected.sort(key=lambda item: (
+            item['project'], not item['eligible'], project_permission_tier(item['grants']),
+            len(item['globalCapabilities']), item['otherAffectedProjectCount'],
+            len(item['grants']), item['name'].lower(),
+        ))
+        return candidates, detected
 
     def preview(self, actor, projects, target):
         plan = self.plan(actor, projects, target)
@@ -164,7 +207,34 @@ class ReaderOnboarding:
             if fresh['digest'] != signed.get('digest') or not fresh['allowedToSubmit']:
                 raise PermissionError("Les droits, groupes ou appartenances ont changé. Relancez la vérification.")
             names = [g['name'] for g in fresh['groups'] if not g['alreadyMember']]
-            if names:
-                self.repository.add_groups(target, names, required_profile='READER')
-            structured_audit(actor['login'], target, ','.join(fresh['projects']), ','.join(names), 'READER_GROUPS_ADDED' if names else 'NOOP_ALREADY_MEMBER')
-            return {'ok': True, 'message': f"Habilitation vérifiée pour {len(fresh['projects'])} projet(s). {len(names)} groupe(s) ajouté(s).", 'noOp': not names}
+            event_id = str(uuid4())
+            # A durable intent must be recorded before any membership is changed.
+            try:
+                self.repository.append_access_history(history_rows(actor['login'], fresh, event_id, 'REQUESTED'))
+            except Exception:
+                structured_audit(actor['login'], target, ','.join(fresh['projects']), ','.join(names), 'HISTORY_UNAVAILABLE', event_id)
+                return {'ok': False, 'message': 'Aucun accès modifié : l’historique est indisponible. Faites vérifier le dataset managé avant de relancer l’attribution.', 'eventId': event_id}
+            try:
+                if names:
+                    added = self.repository.add_groups(target, names, required_profile='READER')
+                    if added is False:
+                        # Another writer may have added the groups after the preview.
+                        for assignment in fresh['assignments']:
+                            assignment['alreadyMember'] = True
+                        names = []
+            except Exception:
+                # Saving settings and appending history are not one DSS transaction.
+                # A save/readback error may mean the grant has already taken effect.
+                try:
+                    self.repository.append_access_history(history_rows(actor['login'], fresh, event_id, 'UNVERIFIED'))
+                except Exception:
+                    structured_audit(actor['login'], target, ','.join(fresh['projects']), ','.join(names), 'HISTORY_FINALIZATION_FAILED', event_id)
+                structured_audit(actor['login'], target, ','.join(fresh['projects']), ','.join(names), 'GRANT_UNVERIFIED', event_id)
+                return {'ok': False, 'message': 'L’attribution n’a pas pu être confirmée. Faites contrôler les appartenances avant de réessayer.', 'detail': 'Référence : ' + event_id, 'eventId': event_id}
+            try:
+                self.repository.append_access_history(history_rows(actor['login'], fresh, event_id, 'COMPLETED'))
+            except Exception:
+                structured_audit(actor['login'], target, ','.join(fresh['projects']), ','.join(names), 'GRANT_CONFIRMED_HISTORY_INCOMPLETE', event_id)
+                return {'ok': False, 'message': 'Les appartenances ont été vérifiées, mais la finalisation de l’historique a échoué. Ne relancez pas l’attribution ; faites contrôler l’historique.', 'detail': 'Référence : ' + event_id, 'eventId': event_id}
+            structured_audit(actor['login'], target, ','.join(fresh['projects']), ','.join(names), 'READER_GROUPS_ADDED' if names else 'NOOP_ALREADY_MEMBER', event_id)
+            return {'ok': True, 'message': f"Habilitation vérifiée pour {len(fresh['projects'])} projet(s). {len(names)} groupe(s) ajouté(s). Attribution enregistrée dans l’historique.", 'noOp': not names, 'eventId': event_id}

@@ -20,3 +20,7 @@ IDENTITY_FIELDS = {"user", "group", "login", "name", "type", "sourceType", "orig
 # Target: standard DSS with an explicitly licensed READER profile.
 # Admin-owned setting; never taken from browser input. Cloud needs Launchpad.
 READER_SOURCE_TYPE = 'LOCAL'
+
+# Managed Flow dataset, provisioned explicitly once before enabling grants.
+ACCESS_HISTORY_PROJECT_KEY = HOST_PROJECT_KEY
+ACCESS_HISTORY_DATASET = 'access_granted_history'
